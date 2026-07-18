@@ -8,19 +8,19 @@
 
 ## Règles de dev (les DEUX agents les respectent)
 
-- **Branches** : `main` = toujours déployable. Feature branches : `feat/a-<slug>` (Mossab) et `feat/b-<slug>` (Léo). Jamais de commit direct sur main.
+- **Branches** : `main` = toujours déployable. Feature branches : `feat/a-<slug>` (Léo) et `feat/b-<slug>` (Mossab). Jamais de commit direct sur main.
 - **PRs** : chaque feature = 1 PR GitHub, description courte (quoi/pourquoi/comment tester). L'autre humain (ou son agent) merge — pas d'auto-merge de son propre PR sauf urgence démo.
-- **Déploiement** : UN SEUL canal — `databricks workspace import-dir app ... && databricks apps deploy facility-trust-desk ...` **depuis main uniquement, après merge**. Owner du deploy : workstream A. B ne déploie jamais directement (évite les écrasements).
+- **Déploiement** : UN SEUL canal — `databricks workspace import-dir app ... && databricks apps deploy facility-trust-desk ...` **depuis main uniquement, après merge**. Owner du deploy : workstream B (Mossab — le CLI est configuré sur sa machine). A ne déploie jamais directement (évite les écrasements).
 - **Contrats** : `docs/CONTRACT.md` est la loi. Toute nouvelle table/colonne = d'abord une PR sur CONTRACT.md, ensuite le code. C'est ce qui permet aux 2 agents de bosser sans se bloquer.
 - **Zones exclusives** (anti-conflit) :
   - Workstream **A** possède : `pipeline/`, `geo/`, `scripts/`, `mlflow/`, tables `workspace.default.*`
   - Workstream **B** possède : `app/` (tout), `design/`, assets UI
   - Fichiers partagés (`docs/CONTRACT.md`, `README.md`, `ROADMAP.md`) : modif = PR séparée minuscule.
-- **Anti-AI-slop** (UI et texte) : interdits — emojis gratuits partout, gradients violets par défaut, textes génériques ("Welcome to our amazing app"), lorem ipsum, cards à ombres exagérées, phrases creuses. Références design : dashboards sobres type intruder.io (SaaS sécurité : froid, dense, crédible), composants 21st.dev pour l'inspiration. Une seule famille de police, une palette restreinte (fond sombre, 1 accent), chiffres en tabular. Le produit doit ressembler à un outil métier qu'une ONG paierait, pas à une landing page.
+- **Anti-AI-slop** (UI et texte) : interdits — emojis gratuits partout, gradients violets par défaut, textes génériques ("Welcome to our amazing app"), lorem ipsum, cards à ombres exagérées, phrases creuses. Référence design : dashboards SaaS sobres et denses (froid, crédible), composants 21st.dev pour l'inspiration. Une seule famille de police, une palette restreinte (fond sombre, 1 accent), chiffres en tabular. Le produit doit ressembler à un outil métier qu'une ONG paierait, pas à une landing page.
 
 ---
 
-## WORKSTREAM A — "Trust Engine" (Mossab + agent A)
+## WORKSTREAM A — "Trust Engine" (Léo + agent A)
 
 *Cible : Evidence & Trust 35% + Technical 25%. Tout ce qui est data, scoring, preuve, plomberie Databricks.*
 
@@ -59,7 +59,7 @@
 
 ---
 
-## WORKSTREAM B — "Product Surface" (Léo + agent B)
+## WORKSTREAM B — "Product Surface" (Mossab + agent B)
 
 *Cible : Product Judgment 30% + Ambition 10%. Tout ce qui est UI, parcours, carte, narration démo.*
 
@@ -94,7 +94,7 @@
 
 ## Séquencement conseillé (chaque bloc = mergeable seul)
 
-| Ordre | A (Mossab) | B (Léo) |
+| Ordre | A (Léo) | B (Mossab) |
 |---|---|---|
 | 1 | A1 scoring v2 | B1 UI system |
 | 2 | A2 validator | B2 journey |
