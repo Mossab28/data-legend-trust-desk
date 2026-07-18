@@ -92,7 +92,11 @@
 ### B5 — Recherche libre (avec A5) `feat/b-search`
 - Barre de recherche naturelle en haut ("dialysis near Jaipur") branchée sur la fonction sémantique de A5, avec fallback keywords. Résultats dans la même UI de ranking.
 
-### B6 — Démo & narration `feat/b-demo`
+### B6 — Genie space (case "Agentic Engineering" du stack) `feat/b-genie`
+- Créer un espace Genie branché sur `facility_trust` + `district_coverage` avec instructions métier ("trust_state = verdict, UNKNOWN n'est pas négatif...") et 3-4 questions d'exemple.
+- Un lien "Ask the data (Genie)" discret dans l'app. Coche la case Genie du stack sans polluer le parcours principal.
+
+### B7 — Démo & narration `feat/b-demo`
 - `docs/DEMO.md` : script 60 secondes chronométré — (1) le problème en 1 phrase, (2) parcours Trust Desk sur un cas réel frappant (facilité claimed-only vs corroborated dans la même ville), (3) override humain persisté, (4) carte deserts, (5) "et l'app se contredit elle-même quand il faut" (validator A2).
 - Screenshots + GIF dans le README. Vidéo backup enregistrée (si le wifi du hackathon meurt).
 
