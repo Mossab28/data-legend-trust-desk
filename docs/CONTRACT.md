@@ -37,6 +37,26 @@ One row = (facility × capability_key). Only rows where the facility claims OR e
 | new_state | string nullable |
 | note | string |
 
+## Table `workspace.default.trust_validations` (built by the self-correction validator, read by the app)
+
+An INDEPENDENT audit of `facility_trust`. One row per finding. Built by
+`pipeline/build_trust_validations.sql`. This is how the app "double-checks its own work".
+
+| column | type | notes |
+|---|---|---|
+| unique_id | string | facility id |
+| capability_key | string \| null | the capability the finding is about; **NULL = facility-level** finding (applies to all capabilities) |
+| code | string | `SHARED_EVIDENCE` / `UNSUPPORTED_SURGERY` / `CAPACITY_WITHOUT_STAFF` |
+| severity | string | `warning` / `info` |
+| message | string | human-readable, planner-facing (already contains the numbers) |
+| disagrees_with_score | boolean | true = this finding contradicts a CORROBORATED score → surface it prominently |
+| detail_json | string | JSON with the raw numbers (`n_shared`, `max_facilities`, `capacity`, …) for traceability |
+
+**App-side join** (workstream B): `LEFT JOIN trust_validations v ON v.unique_id = t.unique_id AND (v.capability_key = t.capability_key OR v.capability_key IS NULL)`.
+Suggested UX: on a facility card, if any `disagrees_with_score` finding exists, show a
+prominent *"⚠ Our own validator disagrees with this rating"* banner with the `message`(s);
+other findings render as muted caveats.
+
 ## Trust logic (authoritative definition) — scorer v2
 
 - CORROBORATED: evidence in ≥2 independent buckets (see `n_fields_corroborating`) AND trust_score ≥ 0.6

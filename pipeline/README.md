@@ -16,3 +16,24 @@ Three reasoning steps turn raw keyword hits into an honest trust signal (validat
 
 To replay: with the SQL warehouse running and `~/.databrickscfg` auth configured, run
 `./scripts/dbsql.sh "$(< pipeline/build_facility_trust.sql)"` from the repo root (poll the returned `statement_id` via `databricks api get /api/2.0/sql/statements/<id>` if it exceeds the 30 s wait). The statement is a single `CREATE OR REPLACE TABLE`, fully idempotent — rerunning it rebuilds the table from scratch with no side effects on the source.
+
+## Self-correction validator (`build_trust_validations.sql`)
+
+A second, **independent** pass that audits the scorer's own output and writes
+`workspace.default.trust_validations` (one row per finding — see `docs/CONTRACT.md`). It runs
+*after* `facility_trust` and reads it back, so the two systems can disagree — which is the
+whole point: the product shows where it doubts itself (Evidence & Trust, 35%).
+
+- **SHARED_EVIDENCE** — the evidence sentences behind a claim are duplicated verbatim across
+  ≥4 other facilities (extraction boilerplate). Detected globally over all claim sentences
+  ≥45 chars; each finding reports how many of the facility's evidence sentences are shared and
+  the worst multiplicity (e.g. one sentence reused on 79 facilities).
+- **UNSUPPORTED_SURGERY** — surgery/trauma/oncology scored CORROBORATED, yet zero
+  anesthesia/operating-theatre evidence anywhere in the record (catches e.g. eye clinics rated
+  as full surgical capability).
+- **CAPACITY_WITHOUT_STAFF** — declared bed capacity > 1000 with no doctors listed
+  (unstaffed capacity or data-entry error; `warning` when > 2000).
+
+`disagrees_with_score = true` marks findings that contradict a CORROBORATED rating — the app
+surfaces these first. Rebuild: `./scripts/dbsql.sh "$(< pipeline/build_trust_validations.sql)"`
+(run after `build_facility_trust.sql`; idempotent CREATE OR REPLACE).
