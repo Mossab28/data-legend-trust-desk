@@ -1,0 +1,115 @@
+# ROADMAP — Win Plan · Data Legend (Facility Trust Desk)
+
+> Objectif : pas une démo — un **produit runnable** qui écrase les critères du jury.
+> Barème : Evidence & Trust **35%** · Product Judgment **30%** · Technical Execution **25%** · Ambition **10%**.
+> Stratégie : chaque heure investie doit frapper une de ces 4 lignes, priorité aux deux premières (65%).
+
+---
+
+## Règles de dev (les DEUX agents les respectent)
+
+- **Branches** : `main` = toujours déployable. Feature branches : `feat/a-<slug>` (Mossab) et `feat/b-<slug>` (Léo). Jamais de commit direct sur main.
+- **PRs** : chaque feature = 1 PR GitHub, description courte (quoi/pourquoi/comment tester). L'autre humain (ou son agent) merge — pas d'auto-merge de son propre PR sauf urgence démo.
+- **Déploiement** : UN SEUL canal — `databricks workspace import-dir app ... && databricks apps deploy facility-trust-desk ...` **depuis main uniquement, après merge**. Owner du deploy : workstream A. B ne déploie jamais directement (évite les écrasements).
+- **Contrats** : `docs/CONTRACT.md` est la loi. Toute nouvelle table/colonne = d'abord une PR sur CONTRACT.md, ensuite le code. C'est ce qui permet aux 2 agents de bosser sans se bloquer.
+- **Zones exclusives** (anti-conflit) :
+  - Workstream **A** possède : `pipeline/`, `geo/`, `scripts/`, `mlflow/`, tables `workspace.default.*`
+  - Workstream **B** possède : `app/` (tout), `design/`, assets UI
+  - Fichiers partagés (`docs/CONTRACT.md`, `README.md`, `ROADMAP.md`) : modif = PR séparée minuscule.
+- **Anti-AI-slop** (UI et texte) : interdits — emojis gratuits partout, gradients violets par défaut, textes génériques ("Welcome to our amazing app"), lorem ipsum, cards à ombres exagérées, phrases creuses. Références design : dashboards sobres type intruder.io (SaaS sécurité : froid, dense, crédible), composants 21st.dev pour l'inspiration. Une seule famille de police, une palette restreinte (fond sombre, 1 accent), chiffres en tabular. Le produit doit ressembler à un outil métier qu'une ONG paierait, pas à une landing page.
+
+---
+
+## WORKSTREAM A — "Trust Engine" (Mossab + agent A)
+
+*Cible : Evidence & Trust 35% + Technical 25%. Tout ce qui est data, scoring, preuve, plomberie Databricks.*
+
+### A1 — Scoring v2 : negation & spécificité réelle `feat/a-scoring-v2`
+- Détection de négation/futur dans les claims ("proposed ICU", "under construction", "will be equipped", "no ventilator") → ces phrases ne corroborent PAS, elles contredisent.
+- Pondération par source : une phrase d'`equipment` avec numéro de modèle > une phrase vague de `description`.
+- Dédoublonnage des phrases quasi identiques inter-champs (sinon fausse corroboration).
+- Recalcule `facility_trust`, valide sur 10 cas à la main (garder les 10 dans `pipeline/VALIDATION.md` — le jury adore).
+
+### A2 — Self-Correction Loop (stretch goal #2 du brief) `feat/a-validator`
+- Table `workspace.default.trust_validations` : règles de cohérence médicale exécutées APRÈS le scoring, qui **auditent le scoring lui-même** :
+  - chirurgie corroborée sans anesthésie nulle part → flag `INCONSISTENT`
+  - NICU corroboré mais 0 pédiatre/gynéco dans specialties → flag
+  - capacité claimée > 1000 lits mais 0 doctors → flag
+  - même phrase créditée à 2 facilités différentes (cross-facility text, on l'a VU dans les données Fortis) → flag
+- L'app affiche ces flags : "⚠ Our own validator disagrees with this score because…". C'est LA réponse à "apps that double-check their own work" (critère 35%).
+
+### A3 — Intervalles de confiance statistiques (Area of Research #1) `feat/a-uncertainty`
+- Bootstrap simple sur les composantes du score → `trust_score_low`, `trust_score_high` dans la table.
+- Répondre à la question ouverte du brief = points Real-Impact Bonus. Documenter la méthode en 10 lignes dans `pipeline/README.md`.
+
+### A4 — MLflow 3 Tracing (stretch goal #1) `feat/a-mlflow`
+- Tracer le pipeline extraction → scoring → ranking comme spans MLflow (un run par rebuild, tags par capability).
+- Un lien/screenshot de la trace dans le README + un bouton "How was this computed?" dans l'app qui pointe vers la trace.
+
+### A5 — Vector Search sémantique `feat/a-vector`
+- Index Mosaic AI Vector Search sur les phrases de claims (endpoint Free Edition).
+- Expose une table/fonction `semantic_match(query)` → l'app l'utilise pour la recherche libre ("cardiac cath lab near Pune") au-delà des 8 capacités fixes.
+- Si Vector Search indisponible sur Free Edition → fallback embeddings + table de similarité précalculée, ET on le dit dans le README (tradeoff assumé = points).
+
+### A6 — Lakebase pour la persistance `feat/a-lakebase`
+- Le brief cite Lakebase explicitement (critère Technical). Migrer `planner_actions` vers une instance Lakebase (Postgres) ; garder le fallback Delta si Lakebase indispo. L'app lit/écrit via la même interface (`persistence.py` côté B — coordonner via CONTRACT).
+
+### A7 — Génération du "Decision Brief" `feat/a-brief`
+- Fonction SQL/py qui, pour une shortlist, génère un rapport exportable (markdown → affiché + téléchargeable) : facilités retenues, evidence citée, gaps, overrides humains, date. = "a decision I'm saving for my team", littéralement la phrase du brief.
+
+---
+
+## WORKSTREAM B — "Product Surface" (Léo + agent B)
+
+*Cible : Product Judgment 30% + Ambition 10%. Tout ce qui est UI, parcours, carte, narration démo.*
+
+### B1 — Refonte UI anti-slop `feat/b-ui-system`
+- Un thème Streamlit custom (config.toml + CSS injecté) : palette sombre sobre (1 accent, ex. ambre ou cyan désaturé), Inter ou IBM Plex, densité type intruder.io, zéro emoji décoratif (les 3 badges de confiance deviennent des pastilles CSS colorées + texte).
+- Header produit : nom, one-liner, et un bandeau discret "10,088 facilities · 35 states · data = claims, not facts".
+- Cards facilité redessinées : ligne compacte (nom, ville, badge, score en barre fine, n_fields), détails au clic. Densité > décoration.
+
+### B2 — Parcours planner complet `feat/b-journey`
+- État vide soigné à l'ouverture (que faire, en 3 étapes).
+- Identité planner persistante (st.session_state + champ en sidebar une seule fois, plus de "your name" répété dans chaque form).
+- Scénarios nommés : une shortlist = un "Planning scenario" avec titre ("Maternity push — Rajasthan Q3"), notes, export.
+- Filtres qui comptent : tri par score/complétude, toggle "corroborated only", indicateur "X% of records in this region are data-sparse".
+
+### B3 — Carte de crise digne du stretch #3 `feat/b-crisis-map`
+- Vue carte India plein écran (pydeck) : chaque district de `district_coverage` coloré par `desert_class` (rouge=underserved, orange=data desert, gris=no data, vert=covered), points facilités par-dessus.
+- LA règle visuelle du brief : "no hospitals here" ≠ "we don't know what's here" → 2 rendus distincts (rouge plein vs hachuré/gris).
+- Tooltip district : n_facilities, indicateurs NFHS clés.
+
+### B4 — L'écran "Why trust this?" `feat/b-evidence-ux`
+- Dans le détail facilité : timeline visuelle extraction → scoring → validation (données de A2/A4), chaque étape avec sa donnée. Le jury voit les receipts sans ouvrir MLflow.
+- Diff visuel quand un humain a overridé : "machine said X, [name] said Y because…".
+
+### B5 — Recherche libre (avec A5) `feat/b-search`
+- Barre de recherche naturelle en haut ("dialysis near Jaipur") branchée sur la fonction sémantique de A5, avec fallback keywords. Résultats dans la même UI de ranking.
+
+### B6 — Démo & narration `feat/b-demo`
+- `docs/DEMO.md` : script 60 secondes chronométré — (1) le problème en 1 phrase, (2) parcours Trust Desk sur un cas réel frappant (facilité claimed-only vs corroborated dans la même ville), (3) override humain persisté, (4) carte deserts, (5) "et l'app se contredit elle-même quand il faut" (validator A2).
+- Screenshots + GIF dans le README. Vidéo backup enregistrée (si le wifi du hackathon meurt).
+
+---
+
+## Séquencement conseillé (chaque bloc = mergeable seul)
+
+| Ordre | A (Mossab) | B (Léo) |
+|---|---|---|
+| 1 | A1 scoring v2 | B1 UI system |
+| 2 | A2 validator | B2 journey |
+| 3 | A4 MLflow | B3 crisis map |
+| 4 | A6 Lakebase | B4 evidence UX |
+| 5 | A5 vector | B5 search (dépend A5) |
+| 6 | A3 intervalles | B6 démo |
+| 7 | A7 brief | — polish final |
+
+**Points de synchro obligatoires** (10 min, humains) : après la ligne 2 (le validator change ce que l'UI affiche), après la ligne 4 (persistance migrée), avant la démo.
+
+## Definition of Done (avant soumission)
+- [ ] App déployée depuis main, testée E2E au clic (pas juste "ça compile")
+- [ ] Chaque claim affiché a sa citation visible en ≤ 2 clics
+- [ ] UNKNOWN jamais présenté comme négatif, deserts jamais confondus
+- [ ] README : archi (schéma), tradeoffs assumés, lien app, screenshots
+- [ ] Démo 60s répétée 2× en vrai
+- [ ] Repo propre : pas de secrets, pas de fichiers morts, branches mergées
