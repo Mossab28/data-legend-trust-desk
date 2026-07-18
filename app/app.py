@@ -127,15 +127,22 @@ def ensure_actions_table() -> bool:
 # Cached reads
 # ---------------------------------------------------------------------------
 
+GEO_TABLE = "workspace.default.facility_geo"
+DESERT_TABLE = "workspace.default.district_coverage"
+ALL_STATES = "All states"
+
+
 @st.cache_data(ttl=300)
 def load_states() -> list[str]:
+    """Clean state names normalized via the India Post pincode directory."""
     df = run_query(
         f"""
-        SELECT DISTINCT state FROM {FACILITY_TABLE}
-        WHERE state IS NOT NULL AND trim(state) <> '' ORDER BY state
+        SELECT state_clean, count(*) AS n FROM {GEO_TABLE}
+        WHERE state_clean IS NOT NULL AND trim(state_clean) <> ''
+        GROUP BY state_clean ORDER BY n DESC
         """
     )
-    return df["state"].tolist()
+    return [ALL_STATES] + df["state_clean"].tolist()
 
 
 @st.cache_data(ttl=300)
@@ -145,14 +152,21 @@ def load_facilities(capability_key: str, state: str) -> pd.DataFrame:
     CORROBORATED first, then CLAIMED_ONLY, then UNKNOWN; trust_score desc
     inside each group.
     """
+    state_filter = "" if state == ALL_STATES else "AND g.state_clean = :state"
+    params = {"capability_key": capability_key}
+    if state != ALL_STATES:
+        params["state"] = state
     return run_query(
         f"""
-        SELECT unique_id, name, city, state, pincode, latitude, longitude,
-               capability_key, trust_state, trust_score, n_fields_corroborating,
-               evidence_json, gaps_json, record_completeness,
-               number_doctors, capacity, source_urls
-        FROM {FACILITY_TABLE}
-        WHERE capability_key = :capability_key AND state = :state
+        SELECT t.unique_id, t.name, t.city,
+               coalesce(g.state_clean, t.state) AS state, g.district,
+               t.pincode, t.latitude, t.longitude,
+               t.capability_key, t.trust_state, t.trust_score,
+               t.n_fields_corroborating, t.evidence_json, t.gaps_json,
+               t.record_completeness, t.number_doctors, t.capacity, t.source_urls
+        FROM {FACILITY_TABLE} t
+        LEFT JOIN {GEO_TABLE} g ON t.unique_id = g.unique_id
+        WHERE t.capability_key = :capability_key {state_filter}
         ORDER BY
           CASE trust_state
             WHEN 'CORROBORATED' THEN 0
@@ -162,7 +176,7 @@ def load_facilities(capability_key: str, state: str) -> pd.DataFrame:
           trust_score DESC,
           name
         """,
-        {"capability_key": capability_key, "state": state},
+        params,
     )
 
 
@@ -465,6 +479,80 @@ def render_browse_tab() -> None:
         render_facility(row, capability_key, actions)
 
 
+DESERT_LABELS = {
+    "LIKELY_UNDERSERVED": "🔴 Likely underserved — few/no facilities AND official NFHS-5 indicators show need",
+    "DATA_DESERT": "🟠 Data desert — facilities exist but their records are too sparse to trust",
+    "NO_DATA_NO_FACILITIES": "⚪ No data — zero facilities in our records; NOT proof the area is empty",
+    "COVERED": "🟢 Covered — facilities present with reasonably rich records",
+}
+
+
+@st.cache_data(ttl=300)
+def load_districts() -> pd.DataFrame:
+    return run_query(f"SELECT * FROM {DESERT_TABLE}")
+
+
+def render_deserts_tab() -> None:
+    """District-level view: separating medical deserts from data deserts."""
+    st.subheader("Medical deserts vs data deserts")
+    st.markdown(
+        "**A blank spot in our data is not a blank spot on the ground.** "
+        "This view joins our records with the India Post directory and the "
+        "official **NFHS-5 district health survey** to say, honestly, which "
+        "districts look underserved — and which we simply don't know about."
+    )
+    try:
+        df = load_districts()
+    except Exception:
+        st.info("District coverage data isn't available yet.")
+        return
+    if df.empty:
+        st.info("District coverage data isn't available yet.")
+        return
+
+    counts = df["desert_class"].value_counts()
+    cols = st.columns(4)
+    for col, key in zip(cols, ["LIKELY_UNDERSERVED", "DATA_DESERT",
+                               "NO_DATA_NO_FACILITIES", "COVERED"]):
+        with col:
+            st.metric(key.replace("_", " ").title(), int(counts.get(key, 0)))
+    for key in ["LIKELY_UNDERSERVED", "DATA_DESERT", "NO_DATA_NO_FACILITIES", "COVERED"]:
+        st.caption(DESERT_LABELS[key])
+
+    pick = st.selectbox(
+        "Show districts classified as",
+        ["LIKELY_UNDERSERVED", "DATA_DESERT", "NO_DATA_NO_FACILITIES", "COVERED"],
+        format_func=lambda k: DESERT_LABELS[k].split(" — ")[0],
+    )
+    sub = df[df["desert_class"] == pick].copy()
+
+    display_cols = [c for c in [
+        "statename", "district", "n_facilities", "data_richness",
+        "institutional_birth_5y_pct", "births_delivered_by_csection_5y_pct",
+        "mothers_who_had_at_least_4_anc_visits_lb5y_pct",
+        "hh_member_covered_health_insurance_pct",
+    ] if c in sub.columns]
+    nice = {
+        "statename": "State", "district": "District",
+        "n_facilities": "Facilities in our data",
+        "data_richness": "Record richness (0-1)",
+        "institutional_birth_5y_pct": "Institutional births %  (NFHS-5)",
+        "births_delivered_by_csection_5y_pct": "C-section births % (NFHS-5)",
+        "mothers_who_had_at_least_4_anc_visits_lb5y_pct": "4+ antenatal visits % (NFHS-5)",
+        "hh_member_covered_health_insurance_pct": "Health-insurance coverage % (NFHS-5)",
+    }
+    sub = sub[display_cols].rename(columns=nice)
+    sort_col = "Institutional births %  (NFHS-5)"
+    if sort_col in sub.columns:
+        sub = sub.sort_values(sort_col, na_position="last")
+    st.dataframe(sub, use_container_width=True, hide_index=True)
+    st.caption(
+        "NFHS-5 columns come from the official district health survey — an "
+        "external reference independent of our facility records. Where they are "
+        "empty, the district could not be matched (post-2019 district splits)."
+    )
+
+
 def render_decisions_tab() -> None:
     """Shortlist and decision history, straight from planner_actions."""
     st.subheader("My shortlist & decisions")
@@ -527,8 +615,9 @@ def main() -> None:
         st.warning("Could not prepare the decisions table — overrides and "
                    "shortlists may not save right now.")
 
-    tab_browse, tab_decisions = st.tabs(
-        ["🔎 Find facilities", "📌 My shortlist & decisions"])
+    tab_browse, tab_deserts, tab_decisions = st.tabs(
+        ["🔎 Find facilities", "🗺️ Medical deserts",
+         "📌 My shortlist & decisions"])
     with tab_browse:
         try:
             render_browse_tab()
@@ -539,6 +628,11 @@ def main() -> None:
             else:
                 st.error("Something went wrong loading the data. Please refresh "
                          "and try again.")
+    with tab_deserts:
+        try:
+            render_deserts_tab()
+        except Exception:
+            st.info("District coverage data isn't available yet.")
     with tab_decisions:
         render_decisions_tab()
 
