@@ -14,6 +14,10 @@ Three reasoning steps turn raw keyword hits into an honest trust signal (validat
 
 `trust_score = 0.60·min(1, n_buckets/3) + 0.20·best_weight + 0.20·min(1, (n_evidence−1)/4) − 0.25·contradiction − 0.15·aspirational_mix`, clamped to [0,1]. The contradiction penalty fires when a surgery/trauma/oncology claim has zero anesthesia/OT evidence anywhere in the record. `record_completeness` is the share of 8 key fields with real content; `trust_state` is UNKNOWN if completeness < 0.35 (priority), CORROBORATED if ≥2 buckets and score ≥ 0.6, else CLAIMED_ONLY. `gaps_json` lists the contradiction, any aspirational wording, and empty key fields.
 
+### Uncertainty band (A3)
+
+There is no ground truth, so `trust_score` is treated as a proportion estimate and wrapped in a **Wilson score interval** (z = 1.645, ~90%) → `trust_score_low` / `trust_score_high`. The effective sample size is the **total evidence mass** (sum of source weights): abundant, high-quality, independent evidence ⇒ **tight** band (solid); a single vague claim ⇒ **wide** band (speculative). The interval is analytic (deterministic, no Monte-Carlo — reliable to rebuild) and always brackets the point estimate. Two facilities can share a `trust_score` yet differ sharply in solidity — e.g. at score 0.80 for surgery, one facility lands at [0.55, 0.93] (solid) and another at [0.32, 0.97] (speculative). This directly answers the brief's open research question on quantifying confidence without a ground truth.
+
 To replay: with the SQL warehouse running and `~/.databrickscfg` auth configured, run
 `./scripts/dbsql.sh "$(< pipeline/build_facility_trust.sql)"` from the repo root (poll the returned `statement_id` via `databricks api get /api/2.0/sql/statements/<id>` if it exceeds the 30 s wait). The statement is a single `CREATE OR REPLACE TABLE`, fully idempotent — rerunning it rebuilds the table from scratch with no side effects on the source.
 

@@ -123,3 +123,24 @@ disagreement is the honesty signal the jury asked for ("apps that double-check t
   paraphrase of the same boilerplate is not caught.
 - UNSUPPORTED_SURGERY is intentionally conservative (CORROBORATED only) to keep the signal
   high; CLAIMED_ONLY surgery without OT evidence is common and not flagged.
+
+---
+
+# Uncertainty band (A3 — Wilson score interval)
+
+`trust_score_low` / `trust_score_high` wrap the point score in a ~90% Wilson interval whose
+effective sample size is the total evidence weight. Sanity-checked live:
+
+- **No inversions:** 0 rows have `trust_score_low > trust_score` (interval always brackets the estimate).
+- **Discriminates at equal score** (the demo point). For **surgery at trust_score = 0.80**:
+
+  | Facility | band | width | reading |
+  |---|---|---|---|
+  | Sanjay Gandhi Institute of Trauma & Orthopaedics | [0.55, 0.93] | 0.25 | **solid** — many independent sources |
+  | JSS Medical College, Mysore | [0.32, 0.97] | 0.48 | **speculative** — same score, thinner evidence |
+
+- **Interval width peaks around mid scores** (0.375 avg at 2 buckets vs 0.25 at 1 and 0.31 at 3).
+  This is the *correct* statistical behaviour — the variance of a proportion is largest near
+  p = 0.5, so medium-confidence ratings are honestly the most uncertain, while very low/very
+  high scores are firmer. It is a feature, not a bug: it tells a planner exactly where the
+  data is most equivocal.

@@ -177,6 +177,7 @@ agg AS (
     -- corroboration = number of INDEPENDENT evidence buckets (narrative/procedure/equipment), max 3
     count(DISTINCT bucket) AS n_fields_corroborating,
     count(*)      AS n_evidence,       -- distinct de-duplicated sentences
+    sum(weight)   AS sum_weight,       -- total evidence mass → effective sample size for the CI
     max(weight)   AS max_weight,
     max(CASE WHEN field = 'equipment' AND weight >= 1.0 THEN 1 ELSE 0 END) AS equip_specific,
     to_json(
@@ -204,6 +205,7 @@ scored AS (
     a.capability_key,
     a.n_fields_corroborating,
     a.n_evidence,
+    a.sum_weight,
     a.max_weight,
     a.equip_specific,
     a.evidence_json,
@@ -228,6 +230,30 @@ scored AS (
   FROM agg a
   JOIN completeness c USING (unique_id)
   LEFT JOIN asp_agg asp USING (unique_id, capability_key)
+),
+
+-- ---------------------------------------------------------------------------
+-- Uncertainty band (A3). There is no ground truth, so we treat trust_score as a
+-- proportion estimate and put a Wilson score interval around it (z = 1.645,
+-- ~90%). The effective sample size is the total evidence mass (sum of source
+-- weights): a rating built on many high-quality, independent sources gets a
+-- TIGHT band (solid); one resting on a single vague claim gets a WIDE band
+-- (speculative). This answers the brief's open question — prediction intervals
+-- with no ground truth — so a planner can tell solid from speculative.
+-- ---------------------------------------------------------------------------
+ci AS (
+  SELECT s.*,
+    greatest(1.0, s.sum_weight) AS n_eff,   -- effective sample size (>=1)
+    2.706 AS z2,                             -- z^2 for z = 1.645
+    1.645 AS z
+  FROM scored s
+),
+ci2 AS (
+  SELECT c.*,
+    (1.0 + z2 / n_eff)                                                       AS denom,
+    (trust_score + z2 / (2.0 * n_eff))                                       AS num_center,
+    sqrt(trust_score * (1.0 - trust_score) / n_eff + z2 / (4.0 * n_eff * n_eff)) AS root
+  FROM ci c
 )
 
 SELECT
@@ -257,7 +283,9 @@ SELECT
     CASE WHEN ok_coords   = 0          THEN 'no coordinates'      END
   ), x -> x IS NOT NULL)) AS gaps_json,
   round(record_completeness, 3) AS record_completeness,
+  round(greatest(0.0, least(trust_score, (num_center - z * root) / denom)), 3) AS trust_score_low,
+  round(least(1.0, greatest(trust_score, (num_center + z * root) / denom)), 3) AS trust_score_high,
   number_doctors,
   capacity,
   source_urls
-FROM scored;
+FROM ci2;
