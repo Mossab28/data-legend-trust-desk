@@ -42,9 +42,11 @@
 - Bootstrap simple sur les composantes du score → `trust_score_low`, `trust_score_high` dans la table.
 - Répondre à la question ouverte du brief = points Real-Impact Bonus. Documenter la méthode en 10 lignes dans `pipeline/README.md`.
 
-### A4 — MLflow 3 Tracing (stretch goal #1) `feat/a-mlflow`
-- Tracer le pipeline extraction → scoring → ranking comme spans MLflow (un run par rebuild, tags par capability).
-- Un lien/screenshot de la trace dans le README + un bouton "How was this computed?" dans l'app qui pointe vers la trace.
+### A4 — MLflow 3 Tracing (stretch goal #1) `feat/a-mlflow` ✅ FAIT
+- ✅ `mlflow/trace_pipeline.py` : rejoue le pipeline extraction → scoring → ranking-par-capability → self-validation comme spans MLflow (14 spans, un run par rebuild, tag `capability` par span de ranking). Loggé dans le workspace (`/Users/<user>/trust-engine`).
+- ✅ Run compagnon avec `log_params` (politique de scoring) + `log_metrics` (counts par trust_state, avg score, largeur de bande, findings validator) → runs comparables.
+- ✅ Mode `--rebuild` : exécute les builds SQL dans les spans (trace d'un vrai rebuild).
+- ✅ Doc `mlflow/README.md` + hook app dans `docs/CONTRACT.md` (deep-link trace pour le bouton "How was this computed?").
 
 ### A5 — Vector Search sémantique `feat/a-vector`
 - Index Mosaic AI Vector Search sur les phrases de claims (endpoint Free Edition).

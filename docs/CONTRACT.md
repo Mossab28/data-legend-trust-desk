@@ -59,6 +59,20 @@ Suggested UX: on a facility card, if any `disagrees_with_score` finding exists, 
 prominent *"⚠ Our own validator disagrees with this rating"* banner with the `message`(s);
 other findings render as muted caveats.
 
+## MLflow trace deep-link (for the "How was this computed?" button)
+
+Every rebuild is replayed as an MLflow 3 trace (`mlflow/trace_pipeline.py`) with one
+span per reasoning step (extract → score → rank-by-capability → self-validate). The app
+can deep-link to the trace UI so a planner can inspect the engine's reasoning end-to-end:
+
+- Experiment: `/Users/<user>/trust-engine`
+- Traces URL: `${DATABRICKS_HOST}/ml/experiments/${experiment_id}/traces`
+
+The script prints `experiment_id` / `run_id` on each run; persist the latest to build the
+link. If tracing is unavailable, the button can fall back to the same receipts the trace
+carries: `evidence_json` + `n_fields_corroborating` + `trust_score_low/high` + matching
+`trust_validations` rows.
+
 ## Trust logic (authoritative definition) — scorer v2
 
 - CORROBORATED: evidence in ≥2 independent buckets (see `n_fields_corroborating`) AND trust_score ≥ 0.6
