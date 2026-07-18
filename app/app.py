@@ -683,9 +683,78 @@ DESERT_HEX = {
 }
 
 
+CENTROIDS_TABLE = "workspace.default.district_centroids"
+
+
 @st.cache_data(ttl=300)
 def load_districts() -> pd.DataFrame:
-    return run_query(f"SELECT * FROM {DESERT_TABLE}")
+    return run_query(
+        f"""
+        SELECT d.*, c.lat, c.lon
+        FROM {DESERT_TABLE} d
+        LEFT JOIN {CENTROIDS_TABLE} c
+          ON d.statename = c.statename AND d.district = c.district
+        """
+    )
+
+
+def render_desert_map(df: pd.DataFrame) -> None:
+    """District dots colored by desert class. 'No hospitals here' (red) must
+    never look like 'we don't know what's here' (hollow gray)."""
+    try:
+        import pydeck as pdk
+
+        geo = df.copy()
+        geo["lat"] = pd.to_numeric(geo["lat"], errors="coerce")
+        geo["lon"] = pd.to_numeric(geo["lon"], errors="coerce")
+        geo = geo.dropna(subset=["lat", "lon"])
+        if geo.empty:
+            return
+
+        def rgba(k, alpha):
+            h = DESERT_HEX.get(k, "#8B949E").lstrip("#")
+            return [int(h[i:i + 2], 16) for i in (0, 2, 4)] + [alpha]
+
+        # Solid fill for classes we assert; hollow (stroke-only) for no-data.
+        geo["fill"] = geo["desert_class"].map(
+            lambda k: rgba(k, 30 if k == "NO_DATA_NO_FACILITIES" else 170))
+        geo["line"] = geo["desert_class"].map(lambda k: rgba(k, 220))
+        geo["radius"] = geo["desert_class"].map(
+            lambda k: 14000 if k == "LIKELY_UNDERSERVED" else 9000)
+        geo["n_fac"] = pd.to_numeric(geo["n_facilities"], errors="coerce").fillna(0)
+        geo["class_label"] = geo["desert_class"].map(
+            lambda k: DESERT_LABELS.get(k, k).split(" — ")[0])
+        geo["district_label"] = (geo["district"].astype(str).str.title()
+                                 + " · " + geo["statename"].astype(str).str.title())
+
+        layer = pdk.Layer(
+            "ScatterplotLayer",
+            data=geo[["district_label", "class_label", "n_fac",
+                      "lat", "lon", "fill", "line", "radius"]],
+            get_position="[lon, lat]",
+            get_fill_color="fill",
+            get_line_color="line",
+            get_radius="radius",
+            radius_min_pixels=3,
+            radius_max_pixels=18,
+            stroked=True,
+            line_width_min_pixels=1,
+            pickable=True,
+        )
+        view = pdk.ViewState(latitude=22.5, longitude=80.0, zoom=3.8)
+        st.pydeck_chart(pdk.Deck(
+            layers=[layer], initial_view_state=view,
+            tooltip={"text": "{district_label}\n{class_label} — "
+                             "{n_fac} facilities in our records"},
+            map_style=None,
+        ))
+        st.caption(
+            "Solid red: official health indicators point to real unmet need. "
+            "Hollow gray: our records are simply empty there — an unknown, "
+            "not a verdict."
+        )
+    except Exception:
+        pass
 
 
 def render_deserts_tab() -> None:
@@ -725,6 +794,8 @@ def render_deserts_tab() -> None:
             f'<b style="color:#C9D1D9">{head}</b> — {tail}</div>',
             unsafe_allow_html=True,
         )
+
+    render_desert_map(df)
 
     pick = st.selectbox(
         "Show districts classified as",
