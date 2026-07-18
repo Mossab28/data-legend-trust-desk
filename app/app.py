@@ -331,9 +331,13 @@ def is_real_value(v) -> bool:
 
 def render_legend() -> None:
     st.markdown(
-        "**Legend:**&nbsp;&nbsp; 🟢 **Corroborated** — backed by 2+ independent fields"
-        " &nbsp;·&nbsp; 🟡 **Claimed only** — stated but not independently confirmed"
-        " &nbsp;·&nbsp; ⚪ **Unknown** — *not enough data to judge* (not a bad sign)"
+        f'<div style="display:flex;gap:18px;align-items:center;flex-wrap:wrap;'
+        f'margin-top:6px">'
+        f'{pill("CORROBORATED")}<span class="ftd-meta">backed by 2+ independent fields</span>'
+        f'{pill("CLAIMED_ONLY")}<span class="ftd-meta">stated, not independently confirmed</span>'
+        f'{pill("UNKNOWN")}<span class="ftd-meta">not enough data to judge — not a bad sign</span>'
+        f'</div>',
+        unsafe_allow_html=True,
     )
 
 
@@ -393,10 +397,19 @@ def render_map(df: pd.DataFrame) -> None:
 
 def render_facility(row: pd.Series, capability_key: str,
                     facility_actions: pd.DataFrame) -> None:
-    """One expandable facility card with citations, gaps and override form."""
-    trust_state = row["trust_state"] if row["trust_state"] in BADGE else "UNKNOWN"
+    """One facility: compact card (name, pill, score bar) + details expander."""
+    trust_state = row["trust_state"] if row["trust_state"] in TRUST_LABEL else "UNKNOWN"
     city = row["city"] if is_real_value(row["city"]) else "city unknown"
-    title = f"{BADGE[trust_state]} — {row['name']} · {city}"
+    district = row.get("district")
+    place = city if not is_real_value(district) or str(district) == str(city) \
+        else f"{city} · {district}"
+
+    try:
+        score = max(0.0, min(1.0, float(row["trust_score"])))
+    except (TypeError, ValueError):
+        score = 0.0
+    n_fields = row["n_fields_corroborating"]
+    n_fields = int(n_fields) if pd.notna(n_fields) else 0
 
     # Overrides recorded for this facility+capability (freshest first).
     overrides = facility_actions[
@@ -404,47 +417,51 @@ def render_facility(row: pd.Series, capability_key: str,
         & (facility_actions["capability_key"] == capability_key)
         & (facility_actions["action_type"] == "override")
     ]
-    if not overrides.empty:
-        title += "  ✏️ overridden"
 
-    with st.expander(title):
+    nums = []
+    if is_real_value(row["number_doctors"]):
+        nums.append(f'<span class="ftd-num">doctors <b>{row["number_doctors"]}</b></span>')
+    if is_real_value(row["capacity"]):
+        nums.append(f'<span class="ftd-num">beds <b>{row["capacity"]}</b></span>')
+    overridden = ('<span class="ftd-num" style="color:#D29922">reviewed by '
+                  f'{overrides.iloc[0]["planner"]}</span>') if not overrides.empty else ""
+
+    st.markdown(
+        f'<div class="ftd-card">'
+        f'<div class="ftd-row1"><div><div class="ftd-name">{row["name"]}</div>'
+        f'<div class="ftd-meta">{place}</div></div>{pill(trust_state)}</div>'
+        f'<div class="ftd-row2">{scorebar(score, trust_state)}'
+        f'<span class="ftd-fields">score {score:.2f} · evidence in {n_fields} '
+        f'field(s)</span>{"".join(nums)}{overridden}</div>'
+        f'</div>',
+        unsafe_allow_html=True,
+    )
+
+    with st.expander("Evidence, gaps & review"):
         # --- override banner -------------------------------------------------
         for _, ov in overrides.iterrows():
             st.warning(
-                f"✏️ **Overridden by {ov['planner']}** → "
-                f"{BADGE.get(ov['new_state'], ov['new_state'])} — “{ov['note']}”"
+                f"Assessment overridden by **{ov['planner']}** → "
+                f"{TRUST_LABEL.get(ov['new_state'], ov['new_state'])} — “{ov['note']}”"
             )
 
-        # --- headline numbers -------------------------------------------------
         st.caption(BADGE_HELP[trust_state])
-        c1, c2, c3 = st.columns([2, 1, 1])
-        with c1:
-            score = row["trust_score"]
-            try:
-                score = max(0.0, min(1.0, float(score)))
-            except (TypeError, ValueError):
-                score = 0.0
-            st.progress(score, text=f"Trust score: {score:.2f}")
-            n_fields = row["n_fields_corroborating"]
-            n_fields = int(n_fields) if pd.notna(n_fields) else 0
-            st.caption(f"Evidence found in **{n_fields}** independent field(s)")
-        with c2:
-            if is_real_value(row["number_doctors"]):
-                st.metric("Doctors (claimed)", str(row["number_doctors"]))
-        with c3:
-            if is_real_value(row["capacity"]):
-                st.metric("Capacity (claimed)", str(row["capacity"]))
 
         # --- citations --------------------------------------------------------
         evidence = parse_json_list(row["evidence_json"])
         st.markdown("**Why we say this — exact sentences from the record:**")
         if evidence:
+            quotes = []
             for ev in evidence:
                 field = FIELD_LABELS.get(str(ev.get("field", "")).lower(),
                                          str(ev.get("field", "source")))
                 sentence = str(ev.get("sentence", "")).strip()
                 if sentence:
-                    st.markdown(f"> “{sentence}”\n>\n> — *{field}*")
+                    quotes.append(
+                        f'<div class="ftd-quote"><div class="q">“{sentence}”</div>'
+                        f'<div class="src">{field}</div></div>'
+                    )
+            st.markdown("".join(quotes), unsafe_allow_html=True)
         else:
             st.caption("No supporting sentences were found in this record.")
 
@@ -470,7 +487,7 @@ def render_facility(row: pd.Series, capability_key: str,
                 new_state = st.selectbox(
                     "New status",
                     TRUST_STATES,
-                    format_func=lambda s: BADGE[s],
+                    format_func=lambda s: TRUST_LABEL[s],
                     key=f"state_{key_base}",
                 )
                 note = st.text_input(
@@ -493,7 +510,7 @@ def render_facility(row: pd.Series, capability_key: str,
             st.markdown("**Shortlist**")
             with st.form(f"shortlist_{key_base}", clear_on_submit=True):
                 sl_planner = st.text_input("Your name", key=f"sl_planner_{key_base}")
-                if st.form_submit_button("➕ Add to shortlist"):
+                if st.form_submit_button("Add to shortlist"):
                     if not sl_planner.strip():
                         st.error("Please enter your name.")
                     else:
@@ -542,9 +559,19 @@ def render_browse_tab() -> None:
     n_cor = int(counts.get("CORROBORATED", 0))
     n_claim = int(counts.get("CLAIMED_ONLY", 0))
     n_unk = int(counts.get("UNKNOWN", 0))
+    tiles = [
+        ("Facilities", len(df), "#E6EDF3"),
+        ("Corroborated", n_cor, TRUST_HEX["CORROBORATED"]),
+        ("Claimed only", n_claim, TRUST_HEX["CLAIMED_ONLY"]),
+        ("Unknown · data-sparse", n_unk, TRUST_HEX["UNKNOWN"]),
+    ]
     st.markdown(
-        f"### {len(df)} facilities · 🟢 {n_cor} corroborated · "
-        f"🟡 {n_claim} claimed-only · ⚪ {n_unk} unknown (data-sparse)"
+        '<div class="ftd-stats">' + "".join(
+            f'<div class="ftd-stat"><div class="v" style="color:{c}">{v}</div>'
+            f'<div class="l">{label}</div></div>'
+            for label, v, c in tiles
+        ) + "</div>",
+        unsafe_allow_html=True,
     )
 
     if df.empty:
@@ -569,10 +596,17 @@ def render_browse_tab() -> None:
 
 
 DESERT_LABELS = {
-    "LIKELY_UNDERSERVED": "🔴 Likely underserved — few/no facilities AND official NFHS-5 indicators show need",
-    "DATA_DESERT": "🟠 Data desert — facilities exist but their records are too sparse to trust",
-    "NO_DATA_NO_FACILITIES": "⚪ No data — zero facilities in our records; NOT proof the area is empty",
-    "COVERED": "🟢 Covered — facilities present with reasonably rich records",
+    "LIKELY_UNDERSERVED": "Likely underserved — few/no facilities AND official NFHS-5 indicators show need",
+    "DATA_DESERT": "Data desert — facilities exist but their records are too sparse to trust",
+    "NO_DATA_NO_FACILITIES": "No data — zero facilities in our records; NOT proof the area is empty",
+    "COVERED": "Covered — facilities present with reasonably rich records",
+}
+
+DESERT_HEX = {
+    "LIKELY_UNDERSERVED": "#F85149",
+    "DATA_DESERT": "#D29922",
+    "NO_DATA_NO_FACILITIES": "#8B949E",
+    "COVERED": "#3FB950",
 }
 
 
@@ -600,13 +634,24 @@ def render_deserts_tab() -> None:
         return
 
     counts = df["desert_class"].value_counts()
-    cols = st.columns(4)
-    for col, key in zip(cols, ["LIKELY_UNDERSERVED", "DATA_DESERT",
-                               "NO_DATA_NO_FACILITIES", "COVERED"]):
-        with col:
-            st.metric(key.replace("_", " ").title(), int(counts.get(key, 0)))
-    for key in ["LIKELY_UNDERSERVED", "DATA_DESERT", "NO_DATA_NO_FACILITIES", "COVERED"]:
-        st.caption(DESERT_LABELS[key])
+    order = ["LIKELY_UNDERSERVED", "DATA_DESERT", "NO_DATA_NO_FACILITIES", "COVERED"]
+    st.markdown(
+        '<div class="ftd-stats">' + "".join(
+            f'<div class="ftd-stat"><div class="v" style="color:{DESERT_HEX[k]}">'
+            f'{int(counts.get(k, 0))}</div>'
+            f'<div class="l">{DESERT_LABELS[k].split(" — ")[0]}</div></div>'
+            for k in order
+        ) + "</div>",
+        unsafe_allow_html=True,
+    )
+    for key in order:
+        head, _, tail = DESERT_LABELS[key].partition(" — ")
+        st.markdown(
+            f'<div class="ftd-meta" style="margin:2px 0">'
+            f'<span style="color:{DESERT_HEX[key]}">●</span> '
+            f'<b style="color:#C9D1D9">{head}</b> — {tail}</div>',
+            unsafe_allow_html=True,
+        )
 
     pick = st.selectbox(
         "Show districts classified as",
@@ -658,7 +703,7 @@ def render_decisions_tab() -> None:
     shortlist = actions[actions["action_type"] == "shortlist"]
     decisions = actions[actions["action_type"] != "shortlist"]
 
-    st.markdown(f"**📌 Shortlist ({len(shortlist)})**")
+    st.markdown(f"**Shortlist ({len(shortlist)})**")
     if shortlist.empty:
         st.caption("No facilities shortlisted yet.")
     else:
@@ -668,7 +713,7 @@ def render_decisions_tab() -> None:
                 f" · by {a['planner']} · {a['ts']}"
             )
 
-    st.markdown(f"**✏️ Overrides & notes ({len(decisions)})**")
+    st.markdown(f"**Overrides & notes ({len(decisions)})**")
     if decisions.empty:
         st.caption("No overrides recorded yet.")
     else:
@@ -685,15 +730,48 @@ def render_decisions_tab() -> None:
 # Main
 # ---------------------------------------------------------------------------
 
+@st.cache_data(ttl=3600)
+def load_headline_stats() -> dict:
+    """Small header numbers; static fallbacks if the tables are unreachable."""
+    try:
+        df = run_query(
+            f"""
+            SELECT count(distinct unique_id) AS facilities,
+                   count(*) AS assessments,
+                   sum(CASE WHEN trust_state = 'CORROBORATED' THEN 1 ELSE 0 END)
+                       AS corroborated
+            FROM {FACILITY_TABLE}
+            """
+        )
+        r = df.iloc[0]
+        return {"facilities": int(r["facilities"]),
+                "assessments": int(r["assessments"]),
+                "corroborated": int(r["corroborated"])}
+    except Exception:
+        return {"facilities": 10088, "assessments": 29054, "corroborated": 3555}
+
+
 def main() -> None:
     st.set_page_config(page_title="Facility Trust Desk — India",
-                       page_icon="🏥", layout="wide")
+                       page_icon="▣", layout="wide")
+    st.markdown(GLOBAL_CSS, unsafe_allow_html=True)
 
-    st.title("🏥 Facility Trust Desk — India")
+    stats = load_headline_stats()
     st.markdown(
-        "Every capability in this data is a **claim, not a verified fact** — "
-        "this desk shows how much evidence backs each claim, so you can "
-        "decide (and defend) where help goes."
+        f'<p class="ftd-title">Facility Trust Desk <span style="color:#8B949E;'
+        f'font-weight:400">— India</span></p>'
+        f'<p class="ftd-sub">Every capability in this data is a claim, not a '
+        f'verified fact. This desk shows how much evidence backs each claim — '
+        f'so you can decide, and defend, where help goes.</p>'
+        f'<div class="ftd-band">'
+        f'<span class="item"><b>{stats["facilities"]:,}</b> facilities</span>'
+        f'<span class="item"><b>{stats["assessments"]:,}</b> capability claims '
+        f'assessed</span>'
+        f'<span class="item"><b>{stats["corroborated"]:,}</b> independently '
+        f'corroborated</span>'
+        f'<span class="item"><b>35</b> states &amp; territories</span>'
+        f'</div>',
+        unsafe_allow_html=True,
     )
     render_legend()
     st.divider()
@@ -705,8 +783,7 @@ def main() -> None:
                    "shortlists may not save right now.")
 
     tab_browse, tab_deserts, tab_decisions = st.tabs(
-        ["🔎 Find facilities", "🗺️ Medical deserts",
-         "📌 My shortlist & decisions"])
+        ["Find facilities", "Medical deserts", "Shortlist & decisions"])
     with tab_browse:
         try:
             render_browse_tab()
