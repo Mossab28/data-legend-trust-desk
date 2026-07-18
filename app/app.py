@@ -317,26 +317,84 @@ def insert_action(planner: str, unique_id: str, capability_key: str,
 
 
 # ---------------------------------------------------------------------------
-# Planner identity & scenario (sidebar, set once per session)
+# Identity & access — who you are comes from Databricks SSO, not a text box
 # ---------------------------------------------------------------------------
 
-def render_sidebar() -> tuple[str, str]:
-    """Planner name + active scenario, set once and reused everywhere."""
+ROLES_TABLE = "workspace.default.app_roles"
+
+
+def get_authenticated_email() -> str:
+    """Real identity of the signed-in user, forwarded by Databricks Apps.
+
+    Cannot be spoofed from the browser: the platform injects the header after
+    OAuth. Empty string when running outside Apps (local dev).
+    """
+    try:
+        headers = st.context.headers
+        return (headers.get("X-Forwarded-Email")
+                or headers.get("x-forwarded-email") or "").strip().lower()
+    except Exception:
+        return ""
+
+
+@st.cache_data(ttl=120)
+def load_role(email: str) -> str:
+    """viewer (default) < planner (can act) < admin (can also grant)."""
+    if not email:
+        return "viewer"
+    try:
+        df = run_query(
+            f"SELECT role FROM {ROLES_TABLE} WHERE lower(email) = :email "
+            f"ORDER BY ts DESC LIMIT 1", {"email": email})
+        return df.iloc[0]["role"] if not df.empty else "viewer"
+    except Exception:
+        return "viewer"
+
+
+def render_sidebar() -> tuple[str, str, str]:
+    """Authenticated identity + role + active scenario."""
+    email = get_authenticated_email()
+    role = load_role(email)
     with st.sidebar:
         st.markdown("**Planner**")
-        planner = st.text_input(
-            "Your name", key="planner_name",
-            placeholder="e.g. A. Sharma",
-            help="Recorded with every override and shortlist you save.",
-        ).strip()
+        if email:
+            st.markdown(f'<div class="ftd-meta">Signed in as<br>'
+                        f'<b style="color:#C9D1D9">{email}</b></div>',
+                        unsafe_allow_html=True)
+        else:
+            st.caption("Not signed in (local dev mode).")
+        st.markdown(
+            f'<div class="ftd-meta" style="margin-top:4px">Role: '
+            f'<b style="color:#C9D1D9">{role}</b></div>',
+            unsafe_allow_html=True)
+        if role == "viewer":
+            st.caption("You can explore everything. Overrides and shortlists "
+                       "are reserved for approved planners — ask an admin to "
+                       "add you.")
         scenario = st.text_input(
             "Active scenario", key="scenario_name",
             value=st.session_state.get("scenario_name", ""),
             placeholder="e.g. Maternity push — Rajasthan Q3",
             help="Shortlists are grouped under this scenario name.",
         ).strip() or "Unnamed scenario"
-        if not planner:
-            st.caption("Set your name to enable overrides and shortlists.")
+
+        if role == "admin":
+            with st.expander("Admin — grant access"):
+                new_email = st.text_input("Email", key="grant_email")
+                new_role = st.selectbox("Role", ["planner", "admin"],
+                                        key="grant_role")
+                if st.button("Grant", key="grant_btn") and new_email.strip():
+                    try:
+                        run_statement(
+                            f"INSERT INTO {ROLES_TABLE} VALUES "
+                            f"(:email, :role, :by, current_timestamp())",
+                            {"email": new_email.strip().lower(),
+                             "role": new_role, "by": email})
+                        load_role.clear()
+                        st.success(f"{new_email} → {new_role}")
+                    except Exception:
+                        st.error("Could not grant access.")
+
         st.divider()
         st.markdown(
             '<div class="ftd-meta">How it works<br>'
@@ -345,7 +403,8 @@ def render_sidebar() -> tuple[str, str]:
             '3&nbsp;&nbsp;Save decisions your team can defend</div>',
             unsafe_allow_html=True,
         )
-    return planner, scenario
+    planner = email if role in ("planner", "admin") else ""
+    return planner, scenario, role
 
 
 # ---------------------------------------------------------------------------
@@ -553,8 +612,8 @@ def render_facility(row: pd.Series, capability_key: str,
         key_base = f"{row['unique_id']}_{capability_key}"
 
         if not planner:
-            st.caption("Set your name in the sidebar to record overrides "
-                       "or shortlist this facility.")
+            st.caption("Overrides and shortlists are reserved for approved "
+                       "planners — your decisions must be attributable.")
             return
 
         left, right = st.columns([3, 1])
@@ -1155,7 +1214,7 @@ def main() -> None:
         )
     st.divider()
 
-    planner, scenario = render_sidebar()
+    planner, scenario, role = render_sidebar()
 
     try:
         ensure_actions_table()
