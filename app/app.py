@@ -38,10 +38,10 @@ CAPABILITIES = {
 
 TRUST_STATES = ["CORROBORATED", "CLAIMED_ONLY", "UNKNOWN"]
 
-BADGE = {
-    "CORROBORATED": "🟢 CORROBORATED",
-    "CLAIMED_ONLY": "🟡 CLAIMED ONLY",
-    "UNKNOWN": "⚪ UNKNOWN (data-sparse)",
+TRUST_LABEL = {
+    "CORROBORATED": "Corroborated",
+    "CLAIMED_ONLY": "Claimed only",
+    "UNKNOWN": "Unknown · data-sparse",
 }
 
 BADGE_HELP = {
@@ -50,12 +50,101 @@ BADGE_HELP = {
     "UNKNOWN": "Not enough data to judge — this does NOT mean the facility is bad.",
 }
 
-# RGB colors for the map, keyed by trust_state.
-MAP_COLORS = {
-    "CORROBORATED": [46, 160, 67],
-    "CLAIMED_ONLY": [212, 167, 44],
-    "UNKNOWN": [150, 150, 150],
+# Hex colors for trust states — single source of truth for pills, bars, map.
+TRUST_HEX = {
+    "CORROBORATED": "#3FB950",
+    "CLAIMED_ONLY": "#D29922",
+    "UNKNOWN": "#8B949E",
 }
+
+# RGB colors for the map, keyed by trust_state (derived from TRUST_HEX).
+MAP_COLORS = {
+    "CORROBORATED": [63, 185, 80],
+    "CLAIMED_ONLY": [210, 153, 34],
+    "UNKNOWN": [139, 148, 158],
+}
+
+GLOBAL_CSS = """
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+
+html, body, [class*="css"], .stMarkdown, .stButton, .stSelectbox, .stTextInput {
+    font-family: 'Inter', -apple-system, system-ui, sans-serif !important;
+}
+.block-container { padding-top: 2.2rem; max-width: 1180px; }
+#MainMenu, footer { visibility: hidden; }
+
+/* ---- product header ---- */
+.ftd-title { font-size: 26px; font-weight: 700; letter-spacing: -0.02em;
+             color: #E6EDF3; margin: 0; }
+.ftd-sub   { font-size: 14px; color: #8B949E; margin: 4px 0 0 0; max-width: 72ch; }
+.ftd-band  { display: flex; gap: 26px; margin-top: 14px; padding: 10px 14px;
+             border: 1px solid #262D37; border-radius: 8px; background: #11161D;
+             font-variant-numeric: tabular-nums; }
+.ftd-band .item { font-size: 12.5px; color: #8B949E; }
+.ftd-band .item b { color: #E6EDF3; font-weight: 600; font-size: 13px; }
+
+/* ---- trust pills ---- */
+.ftd-pill { display: inline-flex; align-items: center; gap: 6px;
+            padding: 2px 10px; border-radius: 999px; font-size: 11px;
+            font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase;
+            border: 1px solid; white-space: nowrap; }
+.ftd-pill .dot { width: 7px; height: 7px; border-radius: 50%; display: inline-block; }
+
+/* ---- facility card ---- */
+.ftd-card { border: 1px solid #262D37; border-radius: 8px; background: #11161D;
+            padding: 13px 16px 12px 16px; margin: 10px 0 0 0; }
+.ftd-row1 { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.ftd-name { font-size: 15px; font-weight: 600; color: #E6EDF3; }
+.ftd-meta { font-size: 12.5px; color: #8B949E; margin-top: 2px; }
+.ftd-row2 { display: flex; align-items: center; gap: 14px; margin-top: 10px; }
+.ftd-scorebar { flex: 0 0 160px; height: 4px; border-radius: 2px; background: #21262D; }
+.ftd-scorebar .fill { height: 100%; border-radius: 2px; }
+.ftd-fields { font-size: 12px; color: #8B949E; font-variant-numeric: tabular-nums; }
+.ftd-num { font-size: 12px; color: #8B949E; font-variant-numeric: tabular-nums; }
+.ftd-num b { color: #C9D1D9; font-weight: 600; }
+
+/* ---- evidence quotes ---- */
+.ftd-quote { border-left: 2px solid #2F81F7; padding: 6px 12px; margin: 8px 0;
+             background: #0E1420; border-radius: 0 6px 6px 0; }
+.ftd-quote .q { font-size: 13.5px; color: #C9D1D9; }
+.ftd-quote .src { font-size: 11px; color: #8B949E; text-transform: uppercase;
+                  letter-spacing: 0.06em; margin-top: 3px; }
+
+/* ---- stat tiles ---- */
+.ftd-stats { display: flex; gap: 12px; margin: 14px 0 4px 0; }
+.ftd-stat  { flex: 1; border: 1px solid #262D37; border-radius: 8px;
+             background: #11161D; padding: 10px 14px; }
+.ftd-stat .v { font-size: 22px; font-weight: 700; color: #E6EDF3;
+               font-variant-numeric: tabular-nums; line-height: 1.1; }
+.ftd-stat .l { font-size: 11.5px; color: #8B949E; margin-top: 2px;
+               text-transform: uppercase; letter-spacing: 0.05em; }
+
+/* streamlit widget touch-ups */
+div[data-testid="stExpander"] details { border: 1px solid #21262D; border-radius: 0 0 8px 8px;
+                                        background: #0D1117; }
+div[data-baseweb="tab-list"] { gap: 4px; }
+button[data-baseweb="tab"] { font-size: 14px !important; }
+</style>
+"""
+
+
+def pill(state: str) -> str:
+    """HTML trust pill for a state."""
+    hexc = TRUST_HEX.get(state, TRUST_HEX["UNKNOWN"])
+    label = TRUST_LABEL.get(state, state)
+    return (
+        f'<span class="ftd-pill" style="color:{hexc};border-color:{hexc}55;'
+        f'background:{hexc}14"><span class="dot" style="background:{hexc}"></span>'
+        f'{label}</span>'
+    )
+
+
+def scorebar(score: float, state: str) -> str:
+    hexc = TRUST_HEX.get(state, TRUST_HEX["UNKNOWN"])
+    pct = max(0, min(100, int(round(score * 100))))
+    return (f'<div class="ftd-scorebar"><div class="fill" '
+            f'style="width:{pct}%;background:{hexc}"></div></div>')
 
 FIELD_LABELS = {
     "capability": "Capability field",
