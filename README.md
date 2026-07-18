@@ -1,51 +1,88 @@
-# Data Legend — Facility Trust Desk
+# Facility Trust Desk — India
 
-> Databricks × Hack-Nation · Challenge 04 · Building the Trust Layer for Indian Healthcare
+> Databricks × Hack-Nation · Challenge 04 "Data Legend" · Track: **Facility Trust Desk**
 
-A live **Databricks App** (Free Edition) that turns 10,000 messy Indian healthcare-facility
-records into decisions a non-technical NGO planner can **trust, defend, and save**.
+A live Databricks App that turns 10,088 messy Indian healthcare-facility records into
+decisions a non-technical NGO planner can **trust, defend, and save** — by treating every
+capability as a *claim to verify*, showing the exact sentences behind every verdict, and
+being honest about what it does not know.
 
-**Track:** Facility Trust Desk — *"Can this facility actually do what it claims?"*
+**Live app:** https://facility-trust-desk-7474647859757540.aws.databricksapps.com
+(Databricks Free Edition · workspace login required)
 
-## The problem
+## The two distinctions that drive everything
 
-In India, a hospital can *claim* it has an ICU, a neonatal bed, or a trauma surgeon — the
-dataset is full of such claims, with **no ground truth** to verify them. This app treats every
-extracted field as a **noisy claim, not a fact**, scores how much corroborating evidence backs
-each claim, and is honest about what it does *not* know.
+- **Claim ≠ fact.** `capability = "ICU"` is an assertion. The app scores how much
+  *independent* evidence backs it — and "proposed ICU" or "NICU not available" corroborate
+  nothing.
+- **Data desert ≠ medical desert.** An empty region in our records is an *unknown*, not a
+  verdict. District-level views join the official NFHS-5 health survey to tell real unmet
+  need (solid red) apart from missing data (hollow gray).
 
-Two distinctions drive everything:
+## What the planner does
 
-- **Claim ≠ Fact** — `capability = "ICU"` is an assertion to verify, not the truth.
-- **Data desert ≠ Medical desert** — "no data here" is not "no hospitals here."
+1. Picks a capability (ICU, NICU, maternity, emergency, oncology, trauma, dialysis,
+   surgery) and a region → facilities ranked by trust state:
+   **Corroborated** (2+ independent sources agree) · **Claimed only** (stated, not
+   confirmed) · **Unknown** (record too sparse to judge — never shown as "bad").
+2. Expands any facility → the exact sentences from the record, field by field, plus
+   "what we don't know".
+3. Disagrees? → **override with a signed note**, persisted for the whole team.
+   Shortlists group into named planning scenarios.
+4. *Medical deserts* tab → 755 districts classified (likely underserved / data desert /
+   no data / covered) on an interactive map.
 
-## Minimum workflow
+## Architecture
 
-Planner selects a capability (ICU, maternity, emergency, oncology, trauma, NICU) and a region →
-sees facilities ranked with **trust signals** → expands any facility to inspect the **exact
-citations** → **overrides** the assessment with a note (persisted).
+```
+Delta Share (read-only)                     workspace.default (ours)
+┌──────────────────────────┐   pure-SQL     ┌──────────────────────────┐
+│ facilities (10,088×51)   │──scorer v2────▶│ facility_trust (29k)     │
+│ india_post_pincode_dir   │──geo joins────▶│ facility_geo, centroids  │
+│ nfhs_5_district_health   │──desert class─▶│ district_coverage (755)  │
+└──────────────────────────┘                │ planner_actions (writes) │
+                                            └────────────┬─────────────┘
+                                     serverless SQL warehouse
+                                                         │
+                                            Databricks App (Streamlit)
+```
 
-## Trust score (design)
+- **Scoring** (`pipeline/`): transparent rule engine in one replayable SQL statement —
+  negation/aspirational filter, source weighting, independence buckets
+  (narrative/procedure/equipment), contradiction penalties, sparsity → UNKNOWN.
+  Hand-validated on 10 real cases: `pipeline/VALIDATION.md`.
+- **Geo layer** (`geo/`): pincode-normalized states/districts (35 clean states from 254
+  dirty values), NFHS-5 join (81% districts matched), 4-way desert classification.
+- **App** (`app/`): Streamlit on Databricks Apps; parameterized SQL only; planner
+  actions persisted with scenario grouping.
 
-Each facility's claim is scored on corroborating evidence across fields (description, capability,
-procedure, equipment, doctor counts), penalized for contradictions (e.g. "Advanced Surgery" with
-no anesthesiologist listed) and for sparsity. Every score shows its receipts: the sentences that
-support it and the gaps that weaken it.
+## Key tradeoffs (assumed)
 
-## Stack (Databricks Free Edition)
+- **No trained model.** There is no ground truth to train or score against; an auditable
+  rule engine + human overrides beats a black box here — and the override log is exactly
+  the labeled data a future model would need. LLM extraction was done upstream by the
+  organizers (their "reasoning layer"); embeddings/LLM-judge are the planned next step.
+- **District-level map** (PIN aggregated to district): individual PINs are too sparse to
+  classify honestly.
+- **Keyword+rules matching** can miss paraphrases; mitigated by matching across 5 fields
+  and disclosed in `pipeline/VALIDATION.md` (residual limitations section).
 
-| Layer | Tool |
-|---|---|
-| App surface | Databricks Apps |
-| Extraction / reasoning | Agent Bricks + Genie |
-| Retrieval (10k rows) | Mosaic AI Vector Search |
-| Persistence (notes, overrides) | Lakebase |
-| Observability / traceability | MLflow 3 Tracing |
+## Replay / develop
 
-## Status
+```bash
+# rebuild the trust table (idempotent)
+./scripts/dbsql.sh "$(< pipeline/build_facility_trust.sql)"
+# rebuild district coverage
+./scripts/dbsql.sh "$(< geo/build_district_coverage.sql)"
+# deploy the app (from main only)
+databricks workspace import-dir app /Workspace/Users/<you>/facility-trust-desk --overwrite
+databricks apps deploy facility-trust-desk --source-code-path /Workspace/Users/<you>/facility-trust-desk
+```
 
-🚧 Work in progress — 6th Global AI Hackathon.
+Roadmap and team workflow: `ROADMAP.md` · Data contract: `docs/CONTRACT.md` ·
+Demo script: `docs/DEMO.md` · Data findings: `docs/DATA_NOTES.md`
 
-## License
+## Team
 
-MIT
+Mossab (product surface, ops) · Léo (trust engine) — built with Claude Code agents,
+feature branches and cross-reviewed PRs.
