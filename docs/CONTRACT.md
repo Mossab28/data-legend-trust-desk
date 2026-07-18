@@ -16,7 +16,7 @@ One row = (facility × capability_key). Only rows where the facility claims OR e
 | capability_key | string | one of: icu, nicu, maternity, emergency, oncology, trauma, dialysis, surgery |
 | trust_state | string | CORROBORATED / CLAIMED_ONLY / UNKNOWN |
 | trust_score | double | 0.0–1.0 |
-| n_fields_corroborating | int | distinct fields (capability/procedure/equipment/description) with evidence |
+| n_fields_corroborating | int | distinct INDEPENDENT evidence buckets (0–3): `narrative` (capability/description/specialties collapse into one — same self-reported source), `procedure`, `equipment` |
 | evidence_json | string | JSON array of {"field": "...", "sentence": "..."} — exact sentences, verbatim |
 | gaps_json | string | JSON array of strings — what is missing (e.g. "no anesthesia evidence for surgery claim") |
 | record_completeness | double | 0.0–1.0 share of key fields with real (non-placeholder) content |
@@ -37,11 +37,14 @@ One row = (facility × capability_key). Only rows where the facility claims OR e
 | new_state | string nullable |
 | note | string |
 
-## Trust logic (authoritative definition)
+## Trust logic (authoritative definition) — scorer v2
 
-- CORROBORATED: evidence in ≥2 distinct fields, trust_score ≥ 0.6
-- CLAIMED_ONLY: claim present in exactly 1 field, no corroboration
+- CORROBORATED: evidence in ≥2 independent buckets (see `n_fields_corroborating`) AND trust_score ≥ 0.6
+- CLAIMED_ONLY: fewer than 2 independent buckets, or score < 0.6 — the claim exists but is not independently corroborated
 - UNKNOWN: record too sparse to judge (record_completeness < 0.35) — display as "not enough data", NEVER as "low trust"
+- `trust_score = 0.60·min(1, n_buckets/3) + 0.20·best_source_weight + 0.20·min(1, (n_evidence−1)/4) − 0.25·contradiction − 0.15·aspirational_mix`, clamped to [0,1]
+- Source weights: specific equipment (has digit or >60 chars) 1.0 · generic equipment/procedure 0.7 · capability 0.6 · description 0.5 · specialties 0.4
+- Negation / aspirational: a matched sentence expressing future intent or absence (`proposed`, `under construction`, `plans to`, `upcoming`, `will be`, `not available`, `no longer`…) does NOT corroborate. A (facility,capability) with only such hits is dropped; mixed with real evidence → −0.15 and a gap note. `planned` alone is not a trigger (elective care preserved).
 - Contradiction penalty: surgery/trauma/oncology claims with zero anesthesia/OT/theatre evidence → score −0.25, add to gaps_json
 - Placeholders ('', '[]', '[""]', 'nan', '0') are NOT content anywhere.
 
