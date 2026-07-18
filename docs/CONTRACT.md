@@ -36,6 +36,7 @@ One row = (facility × capability_key). Only rows where the facility claims OR e
 | action_type | string (override / note / shortlist) |
 | new_state | string nullable |
 | note | string |
+| scenario | string nullable — planning scenario name grouping shortlists (added in B2) |
 
 ## Table `workspace.default.trust_validations` (built by the self-correction validator, read by the app)
 
