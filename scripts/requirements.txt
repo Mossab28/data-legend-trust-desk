@@ -1,0 +1,4 @@
+# Deps for workstream A tooling (decision_brief, semantic_search, persistence)
+databricks-sql-connector>=3.4
+databricks-sdk>=0.33
+psycopg[binary]>=3.1  # Lakebase (Postgres) client for persistence.py
