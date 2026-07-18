@@ -481,6 +481,20 @@ def render_facility(row: pd.Series, capability_key: str,
     )
 
     with st.expander("Evidence, gaps & review"):
+        # --- self-correction: our own validator may disagree -----------------
+        try:
+            vals = validations_for(row["unique_id"], capability_key,
+                                   load_validations())
+        except Exception:
+            vals = pd.DataFrame()
+        if not vals.empty:
+            disagree = vals[vals["disagrees_with_score"] == True]  # noqa: E712
+            for _, v in disagree.iterrows():
+                st.error(f"**Our own validator disagrees with this rating.** "
+                         f"{v['message']}")
+            for _, v in vals[vals["disagrees_with_score"] != True].iterrows():  # noqa: E712
+                st.caption(f"Validator note: {v['message']}")
+
         # --- override banner -------------------------------------------------
         for _, ov in overrides.iterrows():
             st.warning(
@@ -513,6 +527,16 @@ def render_facility(row: pd.Series, capability_key: str,
         if gaps:
             st.info("**What we don't know:**\n\n" +
                     "\n".join(f"- {g}" for g in gaps if str(g).strip()))
+
+        # --- data-quality alarms ---------------------------------------------
+        try:
+            flags = anomaly_flags_for(row["unique_id"], load_anomalies())
+        except Exception:
+            flags = pd.DataFrame()
+        for _, fl in flags.iterrows():
+            label, explain = ANOMALY_LABELS.get(
+                fl["anomaly_type"], (fl["anomaly_type"], ""))
+            st.error(f"**{label}.** {fl['detail']}\n\n{explain}")
 
         # --- sources ----------------------------------------------------------
         if is_real_value(row["source_urls"]):
@@ -686,6 +710,65 @@ DESERT_HEX = {
 
 
 CENTROIDS_TABLE = "workspace.default.district_centroids"
+ANOMALY_TABLE = "workspace.default.trust_anomalies"
+
+VALIDATIONS_TABLE = "workspace.default.trust_validations"
+
+ANOMALY_LABELS = {
+    "GEO_MISMATCH": ("Location doesn't add up",
+                     "The GPS position and the declared PIN code disagree by "
+                     "over 100 km — one of them is wrong."),
+    "DIGITALLY_SILENT": ("No sign of life",
+                         "Claims critical care (ICU, emergency, trauma) but has "
+                         "no social presence and no page update since 2024. "
+                         "The facility may have closed or changed."),
+}
+
+
+@st.cache_data(ttl=300)
+def load_validations() -> pd.DataFrame:
+    """Independent self-correction audit of our own scores."""
+    return run_query(
+        f"""
+        SELECT unique_id, capability_key, code, severity, message,
+               disagrees_with_score
+        FROM {VALIDATIONS_TABLE}
+        """
+    )
+
+
+def validations_for(unique_id: str, capability_key: str,
+                    validations: pd.DataFrame) -> pd.DataFrame:
+    if validations.empty:
+        return validations
+    return validations[
+        (validations["unique_id"] == unique_id)
+        & (validations["capability_key"].isna()
+           | (validations["capability_key"] == capability_key))
+    ]
+
+
+def load_humility_count() -> int:
+    """How many times a human corrected this app — worn as a badge, not hidden."""
+    try:
+        df = run_query(
+            f"SELECT count(*) AS n FROM {ACTIONS_TABLE} "
+            f"WHERE action_type = 'override'")
+        return int(df.iloc[0]["n"])
+    except Exception:
+        return 0
+
+
+@st.cache_data(ttl=300)
+def load_anomalies() -> pd.DataFrame:
+    return run_query(
+        f"SELECT unique_id, name, anomaly_type, detail FROM {ANOMALY_TABLE}")
+
+
+def anomaly_flags_for(unique_id: str, anomalies: pd.DataFrame) -> pd.DataFrame:
+    if anomalies.empty:
+        return anomalies
+    return anomalies[anomalies["unique_id"] == unique_id]
 
 
 @st.cache_data(ttl=300)
@@ -832,6 +915,109 @@ def render_deserts_tab() -> None:
         "empty, the district could not be matched (post-2019 district splits)."
     )
 
+    # --- turn the unknown into a to-do list --------------------------------
+    if pick in ("LIKELY_UNDERSERVED", "DATA_DESERT"):
+        st.markdown("**Who to call first** — verifying these records would "
+                    "improve this map more than any algorithm:")
+        try:
+            todo = load_call_first(pick)
+            st.dataframe(
+                todo.rename(columns={
+                    "name": "Facility", "district": "District",
+                    "state": "State", "completeness": "Record completeness",
+                    "inst_birth_pct": "Institutional births % (NFHS-5)"}),
+                use_container_width=True, hide_index=True,
+            )
+            st.caption("Sparse record + high-need district = one phone call "
+                       "turns a data desert into information.")
+        except Exception:
+            st.caption("Call-first list unavailable.")
+
+
+def render_quality_tab() -> None:
+    """Data-quality alarms + the validator's audit of our own scores.
+
+    Planner language only — this is 'what to double-check before trusting',
+    not a technical forensics lab.
+    """
+    st.subheader("Before you trust the data — what we flagged ourselves")
+    st.markdown(
+        "This app audits its **own** work. Below: records where something "
+        "doesn't add up, and cases where our independent validator "
+        "**overturned our own rating**."
+    )
+
+    try:
+        vals = load_validations()
+        n_disagree = int((vals["disagrees_with_score"] == True).sum())  # noqa: E712
+    except Exception:
+        vals, n_disagree = pd.DataFrame(), 0
+    try:
+        anoms = load_anomalies()
+    except Exception:
+        anoms = pd.DataFrame()
+
+    n_geo = int((anoms["anomaly_type"] == "GEO_MISMATCH").sum()) if not anoms.empty else 0
+    n_silent = int((anoms["anomaly_type"] == "DIGITALLY_SILENT").sum()) if not anoms.empty else 0
+    tiles = [
+        ("Ratings we overturned ourselves", n_disagree, "#F85149"),
+        ("Locations that don't add up", n_geo, "#D29922"),
+        ("Critical-care claims, no sign of life", n_silent, "#D29922"),
+        ("Validator findings in total", len(vals), "#E6EDF3"),
+    ]
+    st.markdown(
+        '<div class="ftd-stats">' + "".join(
+            f'<div class="ftd-stat"><div class="v" style="color:{c}">{v}</div>'
+            f'<div class="l">{label}</div></div>'
+            for label, v, c in tiles) + "</div>",
+        unsafe_allow_html=True,
+    )
+
+    if not vals.empty:
+        st.markdown("**Cases where our validator overturned our own rating** "
+                    "— honesty first:")
+        show = vals[vals["disagrees_with_score"] == True].copy()  # noqa: E712
+        st.dataframe(
+            show[["unique_id", "capability_key", "message"]].rename(columns={
+                "unique_id": "Facility ID", "capability_key": "Capability",
+                "message": "Why we no longer stand by the rating"}),
+            use_container_width=True, hide_index=True, height=260,
+        )
+
+    if not anoms.empty:
+        for key, (label, explain) in ANOMALY_LABELS.items():
+            sub = anoms[anoms["anomaly_type"] == key]
+            if sub.empty:
+                continue
+            with st.expander(f"{label} — {len(sub)} facilities"):
+                st.caption(explain)
+                st.dataframe(
+                    sub[["name", "detail"]].rename(columns={
+                        "name": "Facility", "detail": "What we found"}),
+                    use_container_width=True, hide_index=True, height=300,
+                )
+
+
+@st.cache_data(ttl=300)
+def load_call_first(desert_class: str) -> pd.DataFrame:
+    """High-leverage records: verifying THESE first improves the map most."""
+    return run_query(
+        f"""
+        SELECT DISTINCT t.name, initcap(g.district) AS district,
+               g.state_clean AS state,
+               round(t.record_completeness, 2) AS completeness,
+               d.institutional_birth_5y_pct AS inst_birth_pct
+        FROM {DESERT_TABLE} d
+        JOIN {GEO_TABLE} g
+          ON lower(g.district) = d.district AND lower(g.state_clean) = d.statename
+        JOIN {FACILITY_TABLE} t ON t.unique_id = g.unique_id
+        WHERE d.desert_class = :dc
+        ORDER BY t.record_completeness ASC, inst_birth_pct ASC
+        LIMIT 15
+        """,
+        {"dc": desert_class},
+    )
+
 
 def render_decisions_tab() -> None:
     """Shortlist and decision history, straight from planner_actions."""
@@ -927,6 +1113,10 @@ def main() -> None:
         f'<span class="item"><b>{stats["corroborated"]:,}</b> independently '
         f'corroborated</span>'
         f'<span class="item"><b>35</b> states &amp; territories</span>'
+        f'<span class="item" style="margin-left:auto" title="Every human '
+        f'correction is recorded, kept, and shown — that is the point.">'
+        f'<b style="color:#D29922">{load_humility_count()}</b> times a human '
+        f'corrected this app</span>'
         f'</div>',
         unsafe_allow_html=True,
     )
@@ -963,8 +1153,9 @@ def main() -> None:
         st.warning("Could not prepare the decisions table — overrides and "
                    "shortlists may not save right now.")
 
-    tab_browse, tab_deserts, tab_decisions = st.tabs(
-        ["Find facilities", "Medical deserts", "Shortlist & decisions"])
+    tab_browse, tab_deserts, tab_quality, tab_decisions = st.tabs(
+        ["Find facilities", "Medical deserts", "Data quality",
+         "Shortlist & decisions"])
     with tab_browse:
         try:
             render_browse_tab(planner, scenario)
@@ -980,6 +1171,11 @@ def main() -> None:
             render_deserts_tab()
         except Exception:
             st.info("District coverage data isn't available yet.")
+    with tab_quality:
+        try:
+            render_quality_tab()
+        except Exception:
+            st.info("Quality-audit data isn't available yet.")
     with tab_decisions:
         render_decisions_tab()
 
