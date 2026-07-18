@@ -74,6 +74,30 @@ link. If tracing is unavailable, the button can fall back to the same receipts t
 carries: `evidence_json` + `n_fields_corroborating` + `trust_score_low/high` + matching
 `trust_validations` rows.
 
+## Semantic capability search (A5 — `workspace.default.semantic_facilities`)
+
+Free-text search over facility capability profiles that goes **beyond the 8 fixed
+capability keys** (e.g. "cardiac cath lab", "burns unit", "IVF"). Built fully in-warehouse
+with the `databricks-gte-large-en` foundation embedding model via `ai_query` — no Vector
+Search endpoint needed (none exists on Free Edition). One L2-normalised profile embedding
+per facility lives in `workspace.default.facility_semantic`; similarity = dot product.
+
+**Table-valued SQL function (primary interface for the app):**
+```sql
+SELECT * FROM workspace.default.semantic_facilities('cardiac cath lab');
+-- -> unique_id, name, city, state, latitude, longitude, profile_snippet, similarity  (top 50, ranked)
+```
+Overlay trust for one of the 8 scored capabilities by joining `facility_trust`:
+```sql
+SELECT s.name, s.city, s.similarity, t.trust_state, t.trust_score
+FROM workspace.default.semantic_facilities('neonatal intensive care') s
+LEFT JOIN workspace.default.facility_trust t
+  ON t.unique_id = s.unique_id AND t.capability_key = 'nicu'
+ORDER BY s.similarity DESC LIMIT 10;
+```
+Rebuild: `pipeline/build_semantic_index.sql` then `pipeline/build_semantic_function.sql`.
+CLI/demo: `python scripts/semantic_search.py "burns unit" --capability trauma --k 8`.
+
 ## Decision Brief (exportable artifact — `scripts/decision_brief.py`)
 
 Turns a shortlist into an evidence-cited Markdown **Decision Brief** ("a decision I'm
