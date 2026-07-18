@@ -426,8 +426,13 @@ def render_map(df: pd.DataFrame) -> None:
                 map_style=None,
             )
         )
-        st.caption("Map shows only facilities with usable coordinates — "
-                   "absence from the map does not mean absence on the ground.")
+        c1, c2 = st.columns([1, 5])
+        with c1:
+            st.button("Recenter map", key="recenter_facilities",
+                      help="Reset the map to its initial view.")
+        with c2:
+            st.caption("Map shows only facilities with usable coordinates — "
+                       "absence from the map does not mean absence on the ground.")
     except Exception:
         # Map is a bonus; never let it break the page.
         pass
@@ -833,11 +838,16 @@ def render_desert_map(df: pd.DataFrame) -> None:
                              "{n_fac} facilities in our records"},
             map_style=None,
         ))
-        st.caption(
-            "Solid red: official health indicators point to real unmet need. "
-            "Hollow gray: our records are simply empty there — an unknown, "
-            "not a verdict."
-        )
+        c1, c2 = st.columns([1, 5])
+        with c1:
+            st.button("Recenter map", key="recenter_districts",
+                      help="Reset the map to the all-India view.")
+        with c2:
+            st.caption(
+                "Solid red: official health indicators point to real unmet "
+                "need. Hollow gray: our records are simply empty there — an "
+                "unknown, not a verdict."
+            )
     except Exception:
         pass
 
