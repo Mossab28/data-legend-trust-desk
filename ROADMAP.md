@@ -56,8 +56,10 @@
 ### A6 — Lakebase pour la persistance `feat/a-lakebase`
 - Le brief cite Lakebase explicitement (critère Technical). Migrer `planner_actions` vers une instance Lakebase (Postgres) ; garder le fallback Delta si Lakebase indispo. L'app lit/écrit via la même interface (`persistence.py` côté B — coordonner via CONTRACT).
 
-### A7 — Génération du "Decision Brief" `feat/a-brief`
-- Fonction SQL/py qui, pour une shortlist, génère un rapport exportable (markdown → affiché + téléchargeable) : facilités retenues, evidence citée, gaps, overrides humains, date. = "a decision I'm saving for my team", littéralement la phrase du brief.
+### A7 — Génération du "Decision Brief" `feat/a-brief` ✅ FAIT
+- ✅ `scripts/decision_brief.py` : pour une shortlist (`--ids` ou `--from-shortlist` depuis planner_actions), génère un rapport Markdown exportable — par facilité : verdict + bande de confiance, evidence verbatim citée (champ source), gaps, findings du validator (désaccords flaggés ⚠), overrides humains, résumé des sources (n liens / n domaines), méthodologie + lien trace MLflow.
+- ✅ Testé sur 3 facilités ICU réelles (Rela, Bankers Heart, CMC Ludhiana) → brief propre 3.7k chars.
+- ✅ Fonction importable `build_brief(ids, capability, planner, host)` pour l'app (hook documenté dans `docs/CONTRACT.md`). Dégrade proprement si `planner_actions` absent.
 
 ---
 

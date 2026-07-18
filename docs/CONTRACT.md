@@ -73,6 +73,24 @@ link. If tracing is unavailable, the button can fall back to the same receipts t
 carries: `evidence_json` + `n_fields_corroborating` + `trust_score_low/high` + matching
 `trust_validations` rows.
 
+## Decision Brief (exportable artifact — `scripts/decision_brief.py`)
+
+Turns a shortlist into an evidence-cited Markdown **Decision Brief** ("a decision I'm
+saving for my team"). For each (facility × capability) it assembles the trust verdict +
+confidence band, the verbatim evidence sentences, the gaps, the validator findings
+(disagreements flagged), and any human overrides from `planner_actions`.
+
+**App integration (workstream B):**
+```python
+from scripts.decision_brief import build_brief
+md = build_brief(unique_ids, capability="icu", planner="Léo", host=DATABRICKS_HOST)
+# -> render md, offer as download (decision_brief.md)
+```
+`build_brief` reads `facility_trust` (+ `trust_validations`, `planner_actions` if present)
+and returns a Markdown string. `planner_actions` is optional — the brief renders fine
+without it. CLI: `python scripts/decision_brief.py --from-shortlist --planner "…"` pulls
+ids from `planner_actions` where `action_type='shortlist'`.
+
 ## Trust logic (authoritative definition) — scorer v2
 
 - CORROBORATED: evidence in ≥2 independent buckets (see `n_fields_corroborating`) AND trust_score ≥ 0.6
