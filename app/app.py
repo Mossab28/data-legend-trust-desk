@@ -1111,6 +1111,91 @@ def load_call_first(desert_class: str) -> pd.DataFrame:
     )
 
 
+def build_brief_md(scenario: str, group: pd.DataFrame,
+                   all_actions: pd.DataFrame) -> str:
+    """Evidence-cited Decision Brief for one scenario — 'a decision I'm
+    saving for my team'. Markdown, self-contained, shareable."""
+    ids = group["unique_id"].dropna().unique().tolist()
+    if not ids:
+        return f"# Decision Brief — {scenario}\n\n(no facilities)"
+    placeholders = ", ".join(f":id{i}" for i in range(len(ids)))
+    params = {f"id{i}": v for i, v in enumerate(ids)}
+    rows = run_query(
+        f"""
+        SELECT t.unique_id, t.name, t.city, t.capability_key, t.trust_state,
+               t.trust_score, t.trust_score_low, t.trust_score_high,
+               t.n_fields_corroborating, t.evidence_json, t.gaps_json,
+               t.source_urls
+        FROM {FACILITY_TABLE} t WHERE t.unique_id IN ({placeholders})
+        """, params)
+    try:
+        vals = load_validations()
+    except Exception:
+        vals = pd.DataFrame()
+
+    lines = [
+        f"# Decision Brief — {scenario}",
+        "",
+        "Prepared with Facility Trust Desk — every verdict below is backed by "
+        "the verbatim sentences quoted, and every doubt is stated. Data = "
+        "claims, not verified facts.",
+        "",
+    ]
+    wanted = {(a["unique_id"], a["capability_key"])
+              for _, a in group.iterrows()}
+    for _, r in rows.iterrows():
+        if (r["unique_id"], r["capability_key"]) not in wanted:
+            continue
+        lo, hi = r["trust_score_low"], r["trust_score_high"]
+        band = (f" [{float(lo):.2f}–{float(hi):.2f}]"
+                if pd.notna(lo) and pd.notna(hi) else "")
+        lines += [
+            f"## {r['name']} — "
+            f"{CAPABILITIES.get(r['capability_key'], r['capability_key'])}",
+            f"**Verdict:** {TRUST_LABEL.get(r['trust_state'], r['trust_state'])}"
+            f" · score {float(r['trust_score']):.2f}{band} · "
+            f"{int(r['n_fields_corroborating'] or 0)} independent source(s)",
+            "",
+        ]
+        ev = parse_json_list(r["evidence_json"])
+        if ev:
+            lines.append("**Evidence (verbatim):**")
+            for e in ev[:6]:
+                sent = str(e.get("sentence", "")).strip()
+                if sent:
+                    lines.append(f"> “{sent}” — *{e.get('field', 'source')}*")
+            lines.append("")
+        gaps = parse_json_list(r["gaps_json"])
+        if gaps:
+            lines.append("**What we don't know:** "
+                         + "; ".join(str(g) for g in gaps if str(g).strip()))
+            lines.append("")
+        if not vals.empty:
+            v = validations_for(r["unique_id"], r["capability_key"], vals)
+            for _, f in v.iterrows():
+                flag = "⚠ DISAGREES WITH RATING — " \
+                    if f["disagrees_with_score"] else "Validator note — "
+                lines.append(f"- {flag}{f['message']}")
+            if not v.empty:
+                lines.append("")
+        ovs = all_actions[
+            (all_actions["unique_id"] == r["unique_id"])
+            & (all_actions["action_type"] == "override")]
+        for _, o in ovs.iterrows():
+            lines.append(f"**Human override** by {o['planner']} → "
+                         f"{TRUST_LABEL.get(o['new_state'], o['new_state'])}"
+                         f" — “{o['note']}” ({o['ts']})")
+        lines.append("")
+    lines += [
+        "---",
+        "Methodology: transparent rule engine over 10,088 facility records "
+        "(independence buckets, negation filter, contradiction penalties, "
+        "Wilson uncertainty bands) + independent self-validation pass. "
+        "Full reasoning trace: MLflow experiment `trust-engine`.",
+    ]
+    return "\n".join(lines)
+
+
 def render_decisions_tab() -> None:
     """Shortlist and decision history, straight from planner_actions."""
     st.subheader("My shortlist & decisions")
@@ -1144,6 +1229,15 @@ def render_decisions_tab() -> None:
                     f"{CAPABILITIES.get(a['capability_key'], a['capability_key'])}"
                     f" · by {a['planner']} · {a['ts']}"
                 )
+            try:
+                md = build_brief_md(str(scen), group, actions)
+                st.download_button(
+                    "Download decision brief (.md)", md,
+                    file_name=f"decision-brief-{str(scen)[:40]}.md",
+                    mime="text/markdown", key=f"brief_{scen}",
+                )
+            except Exception:
+                st.caption("Brief unavailable for this scenario.")
 
     st.markdown(f"**Overrides & notes ({len(decisions)})**")
     if decisions.empty:
