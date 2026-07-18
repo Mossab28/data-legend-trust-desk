@@ -64,7 +64,7 @@
 *Cible : Product Judgment 30% + Ambition 10%. Tout ce qui est UI, parcours, carte, narration démo.*
 
 ### B1 — Refonte UI anti-slop `feat/b-ui-system`
-- Un thème Streamlit custom (config.toml + CSS injecté) : palette sombre sobre (1 accent, ex. ambre ou cyan désaturé), Inter ou IBM Plex, densité type intruder.io, zéro emoji décoratif (les 3 badges de confiance deviennent des pastilles CSS colorées + texte).
+- Un thème Streamlit custom (config.toml + CSS injecté) : palette sombre sobre (1 accent, ex. ambre ou cyan désaturé), Inter ou IBM Plex, densité dashboard pro, zéro emoji décoratif (les 3 badges de confiance deviennent des pastilles CSS colorées + texte).
 - Header produit : nom, one-liner, et un bandeau discret "10,088 facilities · 35 states · data = claims, not facts".
 - Cards facilité redessinées : ligne compacte (nom, ville, badge, score en barre fine, n_fields), détails au clic. Densité > décoration.
 
