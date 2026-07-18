@@ -142,11 +142,21 @@ def pill(state: str) -> str:
     )
 
 
-def scorebar(score: float, state: str) -> str:
+def scorebar(score: float, state: str,
+             low: float | None = None, high: float | None = None) -> str:
+    """Score bar; when low/high are given, a translucent band shows the
+    ~90% uncertainty interval — same score, different solidity."""
     hexc = TRUST_HEX.get(state, TRUST_HEX["UNKNOWN"])
     pct = max(0, min(100, int(round(score * 100))))
-    return (f'<div class="ftd-scorebar"><div class="fill" '
-            f'style="width:{pct}%;background:{hexc}"></div></div>')
+    band = ""
+    if low is not None and high is not None and high > low:
+        l = max(0, min(100, int(round(low * 100))))
+        w = max(1, min(100 - l, int(round((high - low) * 100))))
+        band = (f'<div style="position:absolute;left:{l}%;width:{w}%;top:0;'
+                f'height:100%;background:{hexc}30;border-radius:2px"></div>')
+    return (f'<div class="ftd-scorebar" style="position:relative">{band}'
+            f'<div class="fill" style="position:relative;width:{pct}%;'
+            f'background:{hexc}"></div></div>')
 
 FIELD_LABELS = {
     "capability": "Capability field",
@@ -260,7 +270,8 @@ def load_facilities(capability_key: str, state: str) -> pd.DataFrame:
                t.pincode, t.latitude, t.longitude,
                t.capability_key, t.trust_state, t.trust_score,
                t.n_fields_corroborating, t.evidence_json, t.gaps_json,
-               t.record_completeness, t.number_doctors, t.capacity, t.source_urls
+               t.record_completeness, t.number_doctors, t.capacity, t.source_urls,
+               t.trust_score_low, t.trust_score_high
         FROM {FACILITY_TABLE} t
         LEFT JOIN {GEO_TABLE} g ON t.unique_id = g.unique_id
         WHERE t.capability_key = :capability_key {state_filter}
@@ -533,12 +544,24 @@ def render_facility(row: pd.Series, capability_key: str,
     overridden = ('<span class="ftd-num" style="color:#D29922">reviewed by '
                   f'{overrides.iloc[0]["planner"]}</span>') if not overrides.empty else ""
 
+    def _f(v):
+        try:
+            return float(v)
+        except (TypeError, ValueError):
+            return None
+    lo, hi = _f(row.get("trust_score_low")), _f(row.get("trust_score_high"))
+    solidity = ""
+    if lo is not None and hi is not None:
+        solidity = (" · solid" if (hi - lo) < 0.35 else " · speculative") \
+            if trust_state == "CORROBORATED" else ""
     st.markdown(
         f'<div class="ftd-card">'
         f'<div class="ftd-row1"><div><div class="ftd-name">{row["name"]}</div>'
         f'<div class="ftd-meta">{place}</div></div>{pill(trust_state)}</div>'
-        f'<div class="ftd-row2">{scorebar(score, trust_state)}'
-        f'<span class="ftd-fields">score {score:.2f} · {n_fields} independent '
+        f'<div class="ftd-row2">{scorebar(score, trust_state, lo, hi)}'
+        f'<span class="ftd-fields">score {score:.2f}'
+        f'{f" [{lo:.2f}–{hi:.2f}]" if lo is not None and hi is not None else ""}'
+        f'{solidity} · {n_fields} independent '
         f'source(s)</span>{"".join(nums)}{overridden}</div>'
         f'</div>',
         unsafe_allow_html=True,
