@@ -1243,7 +1243,11 @@ def main() -> None:
             '<a href="https://dbc-2dfc8960-44d4.cloud.databricks.com/genie/rooms/'
             '01f182dda9201134996ca371766f40a5" target="_blank" '
             'style="color:#2F81F7;font-size:13px;text-decoration:none">'
-            'Ask the data in plain English (Genie) &#8599;</a>',
+            'Ask the data in plain English (Genie) &#8599;</a><br>'
+            '<a href="https://dbc-2dfc8960-44d4.cloud.databricks.com/ml/'
+            'experiments/1625156524620911/traces" target="_blank" '
+            'style="color:#2F81F7;font-size:13px;text-decoration:none">'
+            'How was this computed? — full MLflow trace &#8599;</a>',
             unsafe_allow_html=True,
         )
 
