@@ -26,7 +26,21 @@ One row = (facility × capability_key). Only rows where the facility claims OR e
 | capacity | string | raw |
 | source_urls | string | raw |
 
-## Table `workspace.default.planner_actions` (written by the app)
+## Planner actions (written by the app) — Lakebase primary, Delta fallback (A6)
+
+Persisted via `scripts/persistence.py` (`PlannerActionsStore`). **Primary store:
+Lakebase** (managed Postgres OLTP, instance `trust-desk-oltp`) — the right tool for
+small transactional writes. **Fallback: Delta** `workspace.default.planner_actions`
+(`pipeline/build_planner_actions.sql`), used automatically when the Lakebase endpoint
+is unreachable (Lakebase endpoints are only reachable from inside the Databricks
+network — a Databricks App reaches them, a local laptop does not). Same schema both sides.
+
+```python
+from scripts.persistence import PlannerActionsStore
+store = PlannerActionsStore()                 # auto-selects backend; store.backend == 'lakebase'|'delta'
+store.write_action(unique_id, action_type, capability_key=..., planner=..., new_state=..., note=...)
+store.list_actions(unique_id=None)            # -> list[dict]
+```
 
 | column | type |
 |---|---|

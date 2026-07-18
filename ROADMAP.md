@@ -55,8 +55,11 @@
 - ✅ Recherche libre au-delà des 8 capacités validée ("cardiac cath lab", "IVF", "burns unit", "keyhole surgery") + overlay trust via join `facility_trust`.
 - ✅ CLI démo `scripts/semantic_search.py`. Tradeoff documenté dans `docs/CONTRACT.md`.
 
-### A6 — Lakebase pour la persistance `feat/a-lakebase`
-- Le brief cite Lakebase explicitement (critère Technical). Migrer `planner_actions` vers une instance Lakebase (Postgres) ; garder le fallback Delta si Lakebase indispo. L'app lit/écrit via la même interface (`persistence.py` côté B — coordonner via CONTRACT).
+### A6 — Lakebase pour la persistance `feat/a-lakebase` ✅ FAIT
+- ✅ Instance Lakebase réelle provisionnée : `trust-desk-oltp` (Postgres 16, CU_1, AVAILABLE) — capacité technique prouvée sur Free Edition.
+- ✅ `scripts/persistence.py` (`PlannerActionsStore`) : interface unique dual-backend. **Primaire Lakebase** (auth OAuth court via `generate_database_credential`, aucun secret statique, upsert `ON CONFLICT`), **fallback Delta** (`pipeline/build_planner_actions.sql`) automatique si endpoint injoignable.
+- ✅ Endpoint Lakebase non joignable depuis machine locale (réseau Databricks only) → fallback Delta validé (write+read OK, `store.backend` reporte le backend actif). En prod l'app tourne DANS Databricks → chemin Lakebase primaire.
+- ✅ Interface documentée dans `docs/CONTRACT.md` (même schéma des deux côtés).
 
 ### A7 — Génération du "Decision Brief" `feat/a-brief` ✅ FAIT
 - ✅ `scripts/decision_brief.py` : pour une shortlist (`--ids` ou `--from-shortlist` depuis planner_actions), génère un rapport Markdown exportable — par facilité : verdict + bande de confiance, evidence verbatim citée (champ source), gaps, findings du validator (désaccords flaggés ⚠), overrides humains, résumé des sources (n liens / n domaines), méthodologie + lien trace MLflow.
