@@ -45,8 +45,10 @@ TRUST_LABEL = {
 }
 
 BADGE_HELP = {
-    "CORROBORATED": "The claim is backed by evidence in 2 or more independent fields.",
-    "CLAIMED_ONLY": "The facility claims this, but we found no independent corroboration.",
+    "CORROBORATED": "Backed by 2+ independent evidence sources (structured "
+                    "equipment, procedures, self-reported narrative).",
+    "CLAIMED_ONLY": "The facility claims this, but no independent source "
+                    "corroborates it — same text copied across fields counts once.",
     "UNKNOWN": "Not enough data to judge — this does NOT mean the facility is bad.",
 }
 
@@ -373,7 +375,7 @@ def render_legend() -> None:
     st.markdown(
         f'<div style="display:flex;gap:18px;align-items:center;flex-wrap:wrap;'
         f'margin-top:6px">'
-        f'{pill("CORROBORATED")}<span class="ftd-meta">backed by 2+ independent fields</span>'
+        f'{pill("CORROBORATED")}<span class="ftd-meta">backed by 2+ independent sources</span>'
         f'{pill("CLAIMED_ONLY")}<span class="ftd-meta">stated, not independently confirmed</span>'
         f'{pill("UNKNOWN")}<span class="ftd-meta">not enough data to judge — not a bad sign</span>'
         f'</div>',
@@ -472,8 +474,8 @@ def render_facility(row: pd.Series, capability_key: str,
         f'<div class="ftd-row1"><div><div class="ftd-name">{row["name"]}</div>'
         f'<div class="ftd-meta">{place}</div></div>{pill(trust_state)}</div>'
         f'<div class="ftd-row2">{scorebar(score, trust_state)}'
-        f'<span class="ftd-fields">score {score:.2f} · evidence in {n_fields} '
-        f'field(s)</span>{"".join(nums)}{overridden}</div>'
+        f'<span class="ftd-fields">score {score:.2f} · {n_fields} independent '
+        f'source(s)</span>{"".join(nums)}{overridden}</div>'
         f'</div>',
         unsafe_allow_html=True,
     )
@@ -929,6 +931,28 @@ def main() -> None:
         unsafe_allow_html=True,
     )
     render_legend()
+    with st.expander("How the trust score works — no black box"):
+        st.markdown(
+            "Every capability in a record is treated as a **claim to verify**. "
+            "The scorer is a transparent rule engine — every point is "
+            "attributable to a sentence you can read below each facility.\n\n"
+            "1. **Independent sources, not copies.** Self-reported narrative "
+            "(capability, description, specialties) counts as *one* source, "
+            "however many times it is repeated. Structured *procedures* and "
+            "*equipment* are separate sources. Corroboration requires 2+ of "
+            "these to independently agree.\n"
+            "2. **Aspirational claims don't count.** \"Proposed ICU\", \"under "
+            "construction\", \"not available\" are detected and excluded from "
+            "positive evidence.\n"
+            "3. **Specificity is rewarded.** An equipment line with a model "
+            "number outweighs a vague sentence.\n"
+            "4. **Contradictions are penalised.** A surgery-level claim with "
+            "no anesthesia or operating-theatre evidence anywhere loses 0.25.\n"
+            "5. **Sparse records are 'Unknown', not 'bad'.** If a record is "
+            "too empty to judge, we say so instead of guessing.\n\n"
+            "Humans stay in charge: any assessment can be overridden with a "
+            "signed note, and the override is stored for the whole team."
+        )
     st.divider()
 
     planner, scenario = render_sidebar()
