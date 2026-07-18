@@ -48,10 +48,12 @@
 - ✅ Mode `--rebuild` : exécute les builds SQL dans les spans (trace d'un vrai rebuild).
 - ✅ Doc `mlflow/README.md` + hook app dans `docs/CONTRACT.md` (deep-link trace pour le bouton "How was this computed?").
 
-### A5 — Vector Search sémantique `feat/a-vector`
-- Index Mosaic AI Vector Search sur les phrases de claims (endpoint Free Edition).
-- Expose une table/fonction `semantic_match(query)` → l'app l'utilise pour la recherche libre ("cardiac cath lab near Pune") au-delà des 8 capacités fixes.
-- Si Vector Search indisponible sur Free Edition → fallback embeddings + table de similarité précalculée, ET on le dit dans le README (tradeoff assumé = points).
+### A5 — Vector Search sémantique `feat/a-vector` ✅ FAIT
+- ✅ Vector Search endpoint **indisponible sur Free Edition** (aucun endpoint) → fallback assumé : embeddings foundation `databricks-gte-large-en` via `ai_query`, index précalculé 100% in-warehouse.
+- ✅ `pipeline/build_semantic_index.sql` : 1 embedding de profil L2-normalisé par facilité (10 008 lignes, build ~50s) dans `workspace.default.facility_semantic`.
+- ✅ `pipeline/build_semantic_function.sql` : fonction SQL `semantic_facilities(query)` → top 50 par similarité (dot product), appelable direct par l'app. Requête embarquée une seule fois (~2–3s/recherche).
+- ✅ Recherche libre au-delà des 8 capacités validée ("cardiac cath lab", "IVF", "burns unit", "keyhole surgery") + overlay trust via join `facility_trust`.
+- ✅ CLI démo `scripts/semantic_search.py`. Tradeoff documenté dans `docs/CONTRACT.md`.
 
 ### A6 — Lakebase pour la persistance `feat/a-lakebase`
 - Le brief cite Lakebase explicitement (critère Technical). Migrer `planner_actions` vers une instance Lakebase (Postgres) ; garder le fallback Delta si Lakebase indispo. L'app lit/écrit via la même interface (`persistence.py` côté B — coordonner via CONTRACT).
