@@ -205,10 +205,16 @@ def ensure_actions_table() -> bool:
             capability_key STRING,
             action_type STRING,
             new_state STRING,
-            note STRING
+            note STRING,
+            scenario STRING
         )
         """
     )
+    # Older deployments may lack the scenario column.
+    try:
+        run_statement(f"ALTER TABLE {ACTIONS_TABLE} ADD COLUMNS (scenario STRING)")
+    except Exception:
+        pass  # column already exists
     return True
 
 
@@ -274,7 +280,7 @@ def load_actions(unique_ids: list[str] | None = None) -> pd.DataFrame:
     df = run_query(
         f"""
         SELECT action_id, ts, planner, unique_id, capability_key,
-               action_type, new_state, note
+               action_type, new_state, note, scenario
         FROM {ACTIONS_TABLE}
         ORDER BY ts DESC
         """
@@ -285,14 +291,15 @@ def load_actions(unique_ids: list[str] | None = None) -> pd.DataFrame:
 
 
 def insert_action(planner: str, unique_id: str, capability_key: str,
-                  action_type: str, new_state: str | None, note: str) -> None:
+                  action_type: str, new_state: str | None, note: str,
+                  scenario: str | None = None) -> None:
     run_statement(
         f"""
         INSERT INTO {ACTIONS_TABLE}
             (action_id, ts, planner, unique_id, capability_key,
-             action_type, new_state, note)
+             action_type, new_state, note, scenario)
         VALUES (:action_id, current_timestamp(), :planner, :unique_id,
-                :capability_key, :action_type, :new_state, :note)
+                :capability_key, :action_type, :new_state, :note, :scenario)
         """,
         {
             "action_id": str(uuid.uuid4()),
@@ -302,8 +309,41 @@ def insert_action(planner: str, unique_id: str, capability_key: str,
             "action_type": action_type,
             "new_state": new_state,
             "note": note,
+            "scenario": scenario,
         },
     )
+
+
+# ---------------------------------------------------------------------------
+# Planner identity & scenario (sidebar, set once per session)
+# ---------------------------------------------------------------------------
+
+def render_sidebar() -> tuple[str, str]:
+    """Planner name + active scenario, set once and reused everywhere."""
+    with st.sidebar:
+        st.markdown("**Planner**")
+        planner = st.text_input(
+            "Your name", key="planner_name",
+            placeholder="e.g. A. Sharma",
+            help="Recorded with every override and shortlist you save.",
+        ).strip()
+        scenario = st.text_input(
+            "Active scenario", key="scenario_name",
+            value=st.session_state.get("scenario_name", ""),
+            placeholder="e.g. Maternity push — Rajasthan Q3",
+            help="Shortlists are grouped under this scenario name.",
+        ).strip() or "Unnamed scenario"
+        if not planner:
+            st.caption("Set your name to enable overrides and shortlists.")
+        st.divider()
+        st.markdown(
+            '<div class="ftd-meta">How it works<br>'
+            '1&nbsp;&nbsp;Pick a need and a region<br>'
+            '2&nbsp;&nbsp;Inspect the evidence behind each facility<br>'
+            '3&nbsp;&nbsp;Save decisions your team can defend</div>',
+            unsafe_allow_html=True,
+        )
+    return planner, scenario
 
 
 # ---------------------------------------------------------------------------
@@ -396,7 +436,8 @@ def render_map(df: pd.DataFrame) -> None:
 # ---------------------------------------------------------------------------
 
 def render_facility(row: pd.Series, capability_key: str,
-                    facility_actions: pd.DataFrame) -> None:
+                    facility_actions: pd.DataFrame,
+                    planner: str = "", scenario: str = "") -> None:
     """One facility: compact card (name, pill, score bar) + details expander."""
     trust_state = row["trust_state"] if row["trust_state"] in TRUST_LABEL else "UNKNOWN"
     city = row["city"] if is_real_value(row["city"]) else "city unknown"
@@ -478,9 +519,14 @@ def render_facility(row: pd.Series, capability_key: str,
         st.divider()
 
         # --- actions: override + shortlist -----------------------------------
-        left, right = st.columns([3, 1])
         key_base = f"{row['unique_id']}_{capability_key}"
 
+        if not planner:
+            st.caption("Set your name in the sidebar to record overrides "
+                       "or shortlist this facility.")
+            return
+
+        left, right = st.columns([3, 1])
         with left:
             with st.form(f"override_{key_base}", clear_on_submit=True):
                 st.markdown("**Disagree with this assessment? Override it:**")
@@ -495,37 +541,32 @@ def render_facility(row: pd.Series, capability_key: str,
                     placeholder="e.g. I visited this facility in May — the ICU is real.",
                     key=f"note_{key_base}",
                 )
-                planner = st.text_input("Your name (required)", key=f"planner_{key_base}")
                 if st.form_submit_button("Save override"):
-                    if not note.strip() or not planner.strip():
-                        st.error("Both a note and your name are required.")
+                    if not note.strip():
+                        st.error("A note is required — your team needs the why.")
                     else:
-                        insert_action(planner.strip(), row["unique_id"],
+                        insert_action(planner, row["unique_id"],
                                       capability_key, "override",
-                                      new_state, note.strip())
+                                      new_state, note.strip(), scenario)
                         st.success("Override saved.")
                         st.rerun()
 
         with right:
             st.markdown("**Shortlist**")
-            with st.form(f"shortlist_{key_base}", clear_on_submit=True):
-                sl_planner = st.text_input("Your name", key=f"sl_planner_{key_base}")
-                if st.form_submit_button("Add to shortlist"):
-                    if not sl_planner.strip():
-                        st.error("Please enter your name.")
-                    else:
-                        insert_action(sl_planner.strip(), row["unique_id"],
-                                      capability_key, "shortlist", None,
-                                      f"Shortlisted {row['name']}")
-                        st.success("Added to shortlist.")
-                        st.rerun()
+            st.caption(f"Scenario: {scenario}")
+            if st.button("Add to shortlist", key=f"sl_{key_base}"):
+                insert_action(planner, row["unique_id"],
+                              capability_key, "shortlist", None,
+                              f"Shortlisted {row['name']}", scenario)
+                st.success("Added to shortlist.")
+                st.rerun()
 
 
 # ---------------------------------------------------------------------------
 # Tabs
 # ---------------------------------------------------------------------------
 
-def render_browse_tab() -> None:
+def render_browse_tab(planner: str = "", scenario: str = "") -> None:
     """Main workflow: pick capability + region → ranked facilities → citations."""
     f1, f2, f3 = st.columns([2, 2, 2])
     with f1:
@@ -554,6 +595,33 @@ def render_browse_tab() -> None:
     if city_filter.strip():
         df = df[df["city"].fillna("").str.contains(city_filter.strip(),
                                                    case=False, regex=False)]
+
+    # --- refine toolbar ---------------------------------------------------
+    t1, t2, t3 = st.columns([1.2, 1.6, 3.2])
+    with t1:
+        only_cor = st.toggle("Corroborated only", value=False)
+    with t2:
+        sort_by = st.selectbox(
+            "Sort by", ["Trust ranking", "Trust score", "Record completeness"],
+            label_visibility="collapsed",
+        )
+    with t3:
+        if not df.empty:
+            comp = pd.to_numeric(df["record_completeness"], errors="coerce")
+            sparse_pct = int(round(100 * ((comp < 0.5) | comp.isna()).mean()))
+            st.markdown(
+                f'<div class="ftd-meta" style="margin-top:6px">'
+                f'{sparse_pct}% of records in this selection are data-sparse — '
+                f'absence of evidence is not evidence of absence.</div>',
+                unsafe_allow_html=True,
+            )
+
+    if only_cor:
+        df = df[df["trust_state"] == "CORROBORATED"]
+    if sort_by == "Trust score":
+        df = df.sort_values("trust_score", ascending=False)
+    elif sort_by == "Record completeness":
+        df = df.sort_values("record_completeness", ascending=False)
 
     counts = df["trust_state"].value_counts() if not df.empty else {}
     n_cor = int(counts.get("CORROBORATED", 0))
@@ -591,8 +659,13 @@ def render_browse_tab() -> None:
                                         "capability_key", "action_type",
                                         "new_state", "note"])
 
-    for _, row in df.iterrows():
-        render_facility(row, capability_key, actions)
+    page_size = 50
+    shown = df.head(page_size)
+    for _, row in shown.iterrows():
+        render_facility(row, capability_key, actions, planner, scenario)
+    if len(df) > page_size:
+        st.caption(f"Showing the top {page_size} of {len(df)} facilities — "
+                   "narrow the region or city filter to see the rest.")
 
 
 DESERT_LABELS = {
@@ -700,29 +773,40 @@ def render_decisions_tab() -> None:
                 "override from the Find facilities tab.")
         return
 
-    shortlist = actions[actions["action_type"] == "shortlist"]
+    shortlist = actions[actions["action_type"] == "shortlist"].copy()
     decisions = actions[actions["action_type"] != "shortlist"]
 
-    st.markdown(f"**Shortlist ({len(shortlist)})**")
+    st.markdown(f"**Planning scenarios ({len(shortlist)} shortlisted)**")
     if shortlist.empty:
         st.caption("No facilities shortlisted yet.")
     else:
-        for _, a in shortlist.iterrows():
-            st.markdown(
-                f"- **{a['note']}** — {CAPABILITIES.get(a['capability_key'], a['capability_key'])}"
-                f" · by {a['planner']} · {a['ts']}"
-            )
+        if "scenario" not in shortlist.columns:
+            shortlist["scenario"] = None
+        shortlist["scenario"] = shortlist["scenario"].fillna("Unnamed scenario")
+        for scen, group in shortlist.groupby("scenario", sort=True):
+            st.markdown(f'<div class="ftd-card"><div class="ftd-name">{scen}'
+                        f'</div><div class="ftd-meta">{len(group)} facilities'
+                        f'</div></div>', unsafe_allow_html=True)
+            for _, a in group.iterrows():
+                st.markdown(
+                    f"- **{a['note']}** — "
+                    f"{CAPABILITIES.get(a['capability_key'], a['capability_key'])}"
+                    f" · by {a['planner']} · {a['ts']}"
+                )
 
     st.markdown(f"**Overrides & notes ({len(decisions)})**")
     if decisions.empty:
         st.caption("No overrides recorded yet.")
     else:
-        show = decisions[["ts", "planner", "unique_id", "capability_key",
-                          "action_type", "new_state", "note"]].copy()
+        cols = ["ts", "planner", "unique_id", "capability_key",
+                "action_type", "new_state", "note"]
+        if "scenario" in decisions.columns:
+            cols.append("scenario")
+        show = decisions[cols].copy()
         show["capability_key"] = show["capability_key"].map(
             lambda k: CAPABILITIES.get(k, k))
         show.columns = ["When", "Planner", "Facility ID", "Capability",
-                        "Action", "New status", "Note"]
+                        "Action", "New status", "Note", "Scenario"][:len(cols)]
         st.dataframe(show, use_container_width=True, hide_index=True)
 
 
@@ -776,6 +860,8 @@ def main() -> None:
     render_legend()
     st.divider()
 
+    planner, scenario = render_sidebar()
+
     try:
         ensure_actions_table()
     except Exception:
@@ -786,7 +872,7 @@ def main() -> None:
         ["Find facilities", "Medical deserts", "Shortlist & decisions"])
     with tab_browse:
         try:
-            render_browse_tab()
+            render_browse_tab(planner, scenario)
         except Exception as exc:
             if "TABLE_OR_VIEW_NOT_FOUND" in str(exc) or "does not exist" in str(exc).lower():
                 st.error("The facility data isn't available yet — the scoring "

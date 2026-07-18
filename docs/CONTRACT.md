@@ -36,6 +36,7 @@ One row = (facility × capability_key). Only rows where the facility claims OR e
 | action_type | string (override / note / shortlist) |
 | new_state | string nullable |
 | note | string |
+| scenario | string nullable — planning scenario name grouping shortlists (added in B2) |
 
 ## Trust logic (authoritative definition)
 
