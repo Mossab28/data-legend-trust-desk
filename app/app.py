@@ -1215,6 +1215,14 @@ def main() -> None:
     st.divider()
 
     planner, scenario, role = render_sidebar()
+    with st.sidebar:
+        st.markdown(
+            '<a href="https://dbc-2dfc8960-44d4.cloud.databricks.com/genie/rooms/'
+            '01f182dda9201134996ca371766f40a5" target="_blank" '
+            'style="color:#2F81F7;font-size:13px;text-decoration:none">'
+            'Ask the data in plain English (Genie) &#8599;</a>',
+            unsafe_allow_html=True,
+        )
 
     try:
         ensure_actions_table()
