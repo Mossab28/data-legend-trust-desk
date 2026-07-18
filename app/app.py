@@ -679,8 +679,70 @@ def render_facility(row: pd.Series, capability_key: str,
 # Tabs
 # ---------------------------------------------------------------------------
 
+@st.cache_data(ttl=600, show_spinner="Searching every facility profile…")
+def load_semantic(query: str) -> pd.DataFrame:
+    """Free-text semantic search (A5) with trust overlay."""
+    return run_query(
+        f"""
+        SELECT f.unique_id, f.name, f.city, f.state, f.similarity,
+               f.profile_snippet,
+               sum(CASE WHEN t.trust_state = 'CORROBORATED' THEN 1 ELSE 0 END)
+                   AS n_corroborated,
+               count(t.capability_key) AS n_claims
+        FROM workspace.default.semantic_facilities(:q) f
+        LEFT JOIN {FACILITY_TABLE} t ON f.unique_id = t.unique_id
+        GROUP BY f.unique_id, f.name, f.city, f.state, f.similarity,
+                 f.profile_snippet
+        ORDER BY f.similarity DESC
+        LIMIT 25
+        """, {"q": query})
+
+
+def render_semantic_results(query: str) -> None:
+    try:
+        df = load_semantic(query)
+    except Exception:
+        st.error("Semantic search is unavailable right now — use the "
+                 "capability filters below.")
+        return
+    st.markdown(
+        f'<div class="ftd-meta" style="margin:8px 0">Top matches for '
+        f'“{query}” — semantic search over all 10k facility profiles, beyond '
+        f'the 8 fixed capabilities. Trust chips show how many of the '
+        f'facility\'s claims are independently corroborated.</div>',
+        unsafe_allow_html=True)
+    for _, r in df.iterrows():
+        sim = float(r["similarity"])
+        n_cor = int(r["n_corroborated"] or 0)
+        n_claims = int(r["n_claims"] or 0)
+        chip = (f'<span class="ftd-num" style="color:{TRUST_HEX["CORROBORATED"]}">'
+                f'{n_cor}/{n_claims} claims corroborated</span>') if n_claims \
+            else '<span class="ftd-num">no assessed claims</span>'
+        snippet = str(r["profile_snippet"] or "")[:220]
+        st.markdown(
+            f'<div class="ftd-card">'
+            f'<div class="ftd-row1"><div><div class="ftd-name">{r["name"]}</div>'
+            f'<div class="ftd-meta">{r["city"] or ""} · {r["state"] or ""}'
+            f'</div></div><span class="ftd-num">match {sim:.2f}</span></div>'
+            f'<div class="ftd-row2">{chip}</div>'
+            f'<div class="ftd-meta" style="margin-top:8px">“{snippet}…”</div>'
+            f'</div>',
+            unsafe_allow_html=True)
+    st.caption("Semantic matches are leads, not verdicts — open the facility "
+               "in the capability view to inspect its evidence.")
+
+
 def render_browse_tab(planner: str = "", scenario: str = "") -> None:
     """Main workflow: pick capability + region → ranked facilities → citations."""
+    free_query = st.text_input(
+        "Search any care need in plain words (optional)",
+        placeholder='e.g. "burns unit", "cardiac cath lab", "IVF" — beyond '
+                    'the 8 capabilities below',
+    )
+    if free_query.strip():
+        render_semantic_results(free_query.strip())
+        st.divider()
+
     f1, f2, f3 = st.columns([2, 2, 2])
     with f1:
         capability_key = st.selectbox(
