@@ -1,7 +1,19 @@
 -- =============================================================================
--- build_facility_trust.sql
+-- build_facility_trust.sql  ·  Trust Scorer v2
 -- Builds workspace.default.facility_trust from the read-only Virtue Foundation
 -- facilities share. Pure SQL, replayable (CREATE OR REPLACE). See docs/CONTRACT.md.
+--
+-- v2 changes (workstream A · feat/a-scoring-v2):
+--   1. Negation / aspirational detection — "proposed ICU", "under construction",
+--      "plans to establish NICU", "not available" no longer corroborate a claim.
+--      Detection is PROXIMITY-based (trigger right before the matched keyword) so
+--      that legitimate "planned surgeries" (elective care) is NOT penalised.
+--   2. Source weighting — an equipment line with a model number/detail outweighs a
+--      vague description sentence.
+--   3. Cross-field de-duplication — the same sentence copied into capability AND
+--      description counts as ONE piece of evidence, not two (no fake corroboration).
+--
+-- Output schema is unchanged (see docs/CONTRACT.md) so the app keeps working.
 -- =============================================================================
 
 CREATE OR REPLACE TABLE workspace.default.facility_trust AS
@@ -95,25 +107,88 @@ sent AS (
   SELECT unique_id, 'specialties' AS field, sentence FROM completeness LATERAL VIEW explode(spec_arr)  t AS sentence
 ),
 
-matches AS (
-  SELECT DISTINCT s.unique_id, k.capability_key, s.field, s.sentence
+-- keyword hits, with per-hit metadata used by the v2 scorer
+matches_raw AS (
+  SELECT
+    s.unique_id,
+    k.capability_key,
+    s.field,
+    s.sentence,
+    -- normalised key for cross-field de-duplication
+    regexp_replace(lower(trim(s.sentence)), '[^a-z0-9]', '') AS norm_key,
+    -- source weight: specific equipment (has a number or is long/detailed) is strongest
+    CASE
+      WHEN s.field = 'equipment'   AND (s.sentence RLIKE '[0-9]' OR length(s.sentence) > 60) THEN 1.0
+      WHEN s.field = 'equipment'   THEN 0.7
+      WHEN s.field = 'procedure'   THEN 0.7
+      WHEN s.field = 'capability'  THEN 0.6
+      WHEN s.field = 'description' THEN 0.5
+      ELSE 0.4  -- specialties
+    END AS weight,
+    -- ASPIRATIONAL / NEGATED detection ------------------------------------
+    -- (a) unambiguous phrases, position-independent
+    -- (b) a "future intent" trigger appearing in the ~28 chars just BEFORE the
+    --     matched keyword (so "plans to establish NICU" is caught, but a real
+    --     "performs planned surgeries" is NOT — "planned" alone is not a trigger).
+    CASE WHEN
+         lower(s.sentence) RLIKE '(under construction|not available|no longer|non-?functional|not functional|unavailable|yet to be|to be operational|expected to be operational|not yet operational|\\(future\\)|proposed )'
+      OR substr(lower(s.sentence),
+                greatest(1, instr(lower(s.sentence), k.keyword) - 28), 28)
+           RLIKE '(plans? to|planned to|upcoming|will be|to be establish|to be set up|being set up|being established|coming soon|opening shortly|sanctioned|to open|set to )'
+      THEN 1 ELSE 0 END AS is_aspirational
   FROM sent s
   JOIN kw k ON lower(s.sentence) LIKE concat('%', k.keyword, '%')
+),
+
+-- positive (operational) evidence, de-duplicated across fields by norm_key
+pos_ranked AS (
+  SELECT *,
+         row_number() OVER (
+           PARTITION BY unique_id, capability_key, norm_key
+           ORDER BY weight DESC, field
+         ) AS rn
+  FROM matches_raw
+  WHERE is_aspirational = 0
+),
+pos_dedup AS (
+  SELECT unique_id, capability_key, field, sentence, weight,
+    -- Independence buckets: capability/description/specialties are self-reported
+    -- narrative (routinely the SAME source text, often verbatim/paraphrased), so
+    -- they collapse into ONE bucket. procedure and equipment are structurally
+    -- distinct sources. Corroboration = agreement across independent buckets.
+    CASE WHEN field IN ('capability','description','specialties') THEN 'narrative' ELSE field END AS bucket
+  FROM pos_ranked WHERE rn = 1
+),
+
+-- aspirational-only signal, kept aside to annotate gaps / dampen the score
+asp_agg AS (
+  SELECT unique_id, capability_key,
+         count(*) AS n_aspirational,
+         max(left(sentence, 200)) AS asp_sample
+  FROM matches_raw
+  WHERE is_aspirational = 1
+  GROUP BY unique_id, capability_key
 ),
 
 agg AS (
   SELECT
     unique_id,
     capability_key,
-    count(DISTINCT CASE WHEN field IN ('capability','procedure','equipment','description') THEN field END) AS n_fields_corroborating,
+    -- corroboration = number of INDEPENDENT evidence buckets (narrative/procedure/equipment), max 3
+    count(DISTINCT bucket) AS n_fields_corroborating,
+    count(*)      AS n_evidence,       -- distinct de-duplicated sentences
+    max(weight)   AS max_weight,
+    max(CASE WHEN field = 'equipment' AND weight >= 1.0 THEN 1 ELSE 0 END) AS equip_specific,
     to_json(
-      slice(
-        array_distinct(collect_list(named_struct('field', field, 'sentence', left(sentence, 300)))),
-        1, 8
+      transform(
+        slice(
+          sort_array(collect_list(named_struct('sortkey', -weight, 'field', field, 'sentence', left(sentence, 300)))),
+          1, 8
+        ),
+        x -> named_struct('field', x.field, 'sentence', x.sentence)
       )
-    ) AS evidence_json,
-    max(CASE WHEN field = 'equipment' AND (sentence RLIKE '[0-9]' OR length(sentence) > 60) THEN 1 ELSE 0 END) AS equip_specific
-  FROM matches
+    ) AS evidence_json
+  FROM pos_dedup
   GROUP BY unique_id, capability_key
 ),
 
@@ -128,21 +203,31 @@ scored AS (
     c.longitude,
     a.capability_key,
     a.n_fields_corroborating,
+    a.n_evidence,
+    a.max_weight,
+    a.equip_specific,
     a.evidence_json,
     c.record_completeness,
     c.numberDoctors           AS number_doctors,
     c.capacity,
     c.source_urls,
-    -- contradiction: surgery-level claim without anesthesia/OT evidence
+    coalesce(asp.n_aspirational, 0) AS n_aspirational,
+    asp.asp_sample,
+    -- contradiction: surgery-level claim without any anesthesia/OT evidence
     CASE WHEN a.capability_key IN ('surgery','trauma','oncology') AND c.has_anes = 0 THEN 1 ELSE 0 END AS contradiction,
-    greatest(0.0,
-      least(1.0, a.n_fields_corroborating / 3.0) * 0.7
-      + (CASE WHEN a.equip_specific = 1 THEN 1.0 ELSE 0.4 END) * 0.3
+    -- Breadth across independent fields is the dominant driver (a single field can
+    -- never be "corroborated"); evidence quality and volume are modest bonuses only.
+    greatest(0.0, least(1.0,
+        0.60 * least(1.0, a.n_fields_corroborating / 3.0)      -- 1 field=.20, 2=.40, 3+=.60
+      + 0.20 * a.max_weight                                    -- best-source quality (.40..1.0)
+      + 0.20 * least(1.0, (a.n_evidence - 1) / 4.0)            -- small bonus for extra distinct evidence
       - (CASE WHEN a.capability_key IN ('surgery','trauma','oncology') AND c.has_anes = 0 THEN 0.25 ELSE 0.0 END)
-    ) AS trust_score,
+      - (CASE WHEN asp.n_aspirational IS NOT NULL THEN 0.15 ELSE 0.0 END)  -- also has planned/under-construction mentions
+    )) AS trust_score,
     c.equip_arr, c.desc_arr, c.ok_doctors, c.ok_capacity, c.ok_coords
   FROM agg a
   JOIN completeness c USING (unique_id)
+  LEFT JOIN asp_agg asp USING (unique_id, capability_key)
 )
 
 SELECT
@@ -164,6 +249,7 @@ SELECT
   evidence_json,
   to_json(filter(array(
     CASE WHEN contradiction = 1        THEN 'surgery-level claim but no anesthesia/OT evidence' END,
+    CASE WHEN n_aspirational > 0       THEN concat('record also has planned/under-construction wording: "', asp_sample, '"') END,
     CASE WHEN size(equip_arr) = 0      THEN 'no equipment data'   END,
     CASE WHEN ok_doctors  = 0          THEN 'no doctor count'     END,
     CASE WHEN ok_capacity = 0          THEN 'no capacity data'    END,
