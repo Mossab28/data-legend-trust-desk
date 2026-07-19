@@ -525,8 +525,13 @@ def render_map(df: pd.DataFrame) -> str:
 
 def render_facility(row: pd.Series, capability_key: str,
                     facility_actions: pd.DataFrame,
-                    planner: str = "", scenario: str = "") -> None:
-    """One facility: compact card (name, pill, score bar) + details expander."""
+                    planner: str = "", scenario: str = "",
+                    expanded: bool = False) -> None:
+    """One facility: compact card (name, pill, score bar) + details expander.
+
+    ``expanded`` opens the evidence panel by default — used when a planner taps
+    a single facility on the map, so its citations are shown without a click.
+    """
     trust_state = row["trust_state"] if row["trust_state"] in TRUST_LABEL else "UNKNOWN"
     city = row["city"] if is_real_value(row["city"]) else "city unknown"
     district = row.get("district")
@@ -578,7 +583,7 @@ def render_facility(row: pd.Series, capability_key: str,
         unsafe_allow_html=True,
     )
 
-    with st.expander("Evidence, gaps & review"):
+    with st.expander("Evidence, gaps & review", expanded=expanded):
         # --- self-correction: our own validator may disagree -----------------
         try:
             vals = validations_for(row["unique_id"], capability_key,
@@ -759,19 +764,31 @@ def render_semantic_results(query: str) -> None:
 
 def render_browse_tab(planner: str = "", scenario: str = "") -> None:
     """Main workflow: pick capability + region → ranked facilities → citations."""
+    st.markdown(
+        '<div class="ftd-meta" style="margin-bottom:10px">'
+        'Find facilities that can actually deliver a given kind of care — and '
+        '<b style="color:#C9D1D9">see the evidence behind every rating</b> '
+        'before you send a family there. '
+        '① Choose a care need and region · ② scan the map or list · '
+        '③ open a card to inspect the citations.</div>',
+        unsafe_allow_html=True,
+    )
     free_query = st.text_input(
-        "Search any care need in plain words (optional)",
-        placeholder='e.g. "burns unit", "cardiac cath lab", "IVF" — beyond '
-                    'the 8 capabilities below',
+        "Search by hospital name or care need (plain words)",
+        placeholder='e.g. "Apollo", "burns unit", "cardiac cath lab", "IVF" — '
+                    'beyond the 8 capabilities below',
     )
     if free_query.strip():
         render_semantic_results(free_query.strip())
         st.divider()
 
+    st.markdown('<div class="ftd-meta" style="margin:2px 0 4px">'
+                'Or filter the 8 core capabilities by region:</div>',
+                unsafe_allow_html=True)
     f1, f2, f3 = st.columns([2, 2, 2])
     with f1:
         capability_key = st.selectbox(
-            "What capability do you need?",
+            "What kind of care do you need?",
             list(CAPABILITIES),
             format_func=lambda k: CAPABILITIES[k],
         )
@@ -857,15 +874,21 @@ def render_browse_tab(planner: str = "", scenario: str = "") -> None:
         )
         return
 
+    st.markdown('<div class="ftd-meta" style="margin:8px 0 4px">'
+                '<b style="color:#C9D1D9">Map</b> — colour shows trust '
+                '(green corroborated · amber claimed · grey data-sparse). '
+                'Tap a dot to focus that facility and open its evidence.</div>',
+                unsafe_allow_html=True)
     picked = render_map(df)
+    focused = False
     if picked:
         sub = df[df["name"] == picked]
         if not sub.empty:
             df = sub
-            st.markdown(f'<div class="ftd-meta">Map selection: '
-                        f'<b style="color:#C9D1D9">{picked}</b> — clear it by '
-                        f'clicking an empty area of the map.</div>',
-                        unsafe_allow_html=True)
+            focused = True
+            st.success(f"Focused on **{picked}** — its evidence is opened "
+                       "below. Tap an empty area of the map to see all "
+                       "facilities again.")
 
     try:
         actions = load_actions(df["unique_id"].tolist())
@@ -874,10 +897,20 @@ def render_browse_tab(planner: str = "", scenario: str = "") -> None:
                                         "capability_key", "action_type",
                                         "new_state", "note"])
 
+    if focused:
+        st.markdown('<div class="ftd-meta" style="margin:8px 0 2px">'
+                    'Selected facility</div>', unsafe_allow_html=True)
+    else:
+        st.markdown('<div class="ftd-meta" style="margin:8px 0 2px">'
+                    'Facilities — ranked by trust. '
+                    '<b style="color:#C9D1D9">Open a card</b> to read the '
+                    'evidence, gaps and validator notes behind its rating.</div>',
+                    unsafe_allow_html=True)
     page_size = 15
     shown = df.head(page_size)
     for _, row in shown.iterrows():
-        render_facility(row, capability_key, actions, planner, scenario)
+        render_facility(row, capability_key, actions, planner, scenario,
+                        expanded=focused)
     if len(df) > page_size:
         st.caption(f"Top {page_size} of {len(df)} — search a name, tap the "
                    "map, or narrow the filters.")
