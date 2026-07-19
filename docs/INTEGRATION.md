@@ -21,7 +21,12 @@ pipeline/build_trust_validations.sql     -- trust_validations (self-validator)
 pipeline/build_semantic_index.sql        -- facility_semantic (embeddings, ~50s)
 pipeline/build_semantic_function.sql     -- semantic_facilities(query) SQL function
 pipeline/build_planner_actions.sql       -- planner_actions Delta table (fallback store)
+geo/build_facility_geo.sql               -- facility_geo (clean per-facility state/district; app dropdown + region filter)
+geo/build_district_coverage.sql          -- district_coverage (data desert vs medical desert, NFHS-5)
 ```
+
+Without `facility_geo` the app's main "Find facilities" tab and state dropdown come up
+empty (`load_states()` reads it), so build it before the demo.
 
 `facility_semantic` needs the `databricks-gte-large-en` embedding endpoint (present in
 Free Edition). For Lakebase (§6), create the instance in your workspace too — or just

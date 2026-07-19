@@ -1,3 +1,25 @@
+# Geography layer
+
+Two tables, both built purely from the read-only source share (India Post pincode
+directory + Virtue Foundation facilities), both idempotent `CREATE OR REPLACE`.
+
+## `workspace.default.facility_geo` — clean per-facility state/district
+
+One row per facility (`unique_id`). Rebuild with `geo/build_facility_geo.sql`.
+
+The raw `address_stateOrRegion` is unusable for filtering (~254 distinct values for
+~36 real states). This table attaches a trustworthy `(state_clean, district)` by joining
+the cleaned facility pincode to the India Post directory — using the **same** pin-cleaning
+and deterministic `pin → (state, district)` map as `district_coverage`, so the two agree.
+`district` is stored lower/trimmed (matches `district_coverage.district`; the app applies
+`initcap()`); `state_clean` is initcap for a readable dropdown (joins lower() it).
+
+**Read by the app** (`app/app.py`): `load_states()` (state dropdown), `load_facilities()`
+(region filter), `load_call_first()` (join to `district_coverage`). Without this table the
+main "Find facilities" tab comes up empty — build it before any demo.
+
+---
+
 # District Coverage — "data desert ≠ medical desert"
 
 Table: **`workspace.default.district_coverage`** — 755 rows, one per `(statename, district)`
