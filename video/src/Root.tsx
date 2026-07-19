@@ -1,5 +1,5 @@
 import React from "react";
-import { Audio, Composition, Series, staticFile } from "remotion";
+import { Composition, Series } from "remotion";
 import {
   S1Hook,
   S2Problem,
@@ -32,7 +32,6 @@ const TOTAL =
 
 const Video: React.FC = () => (
   <>
-    <Audio src={staticFile("ambient.wav")} volume={0.55} />
     <Series>
       <Series.Sequence durationInFrames={T.s1}>
         <S1Hook durationInFrames={T.s1} />
