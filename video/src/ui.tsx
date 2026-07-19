@@ -15,21 +15,30 @@ export const useEnter = (delay = 0, damping = 200) => {
   return spring({ frame: frame - delay, fps, config: { damping } });
 };
 
-/** Scene shell: fades/slides in at start, fades out over the last 12 frames. */
+/** Scene shell v2: zoom-through transitions + continuous camera drift.
+ * Enter: scale 1.06→1 while fading in. Exit: push into 0.94 while fading out.
+ * The content also drifts slowly the whole time — nothing ever sits still. */
 export const SceneShell: React.FC<{
   children: React.ReactNode;
   durationInFrames: number;
 }> = ({ children, durationInFrames }) => {
   const frame = useCurrentFrame();
-  const inO = interpolate(frame, [0, 12], [0, 1], {
+  const T = 16; // transition frames (scenes overlap by this much in Root)
+  const inT = interpolate(frame, [0, T], [0, 1], {
     extrapolateRight: "clamp",
   });
-  const outO = interpolate(
+  const outT = interpolate(
     frame,
-    [durationInFrames - 12, durationInFrames - 2],
-    [1, 0],
+    [durationInFrames - T, durationInFrames],
+    [0, 1],
     { extrapolateLeft: "clamp", extrapolateRight: "clamp" }
   );
+  const easeIn = 1 - Math.pow(1 - inT, 3);
+  const scale = 1.06 - 0.06 * easeIn - 0.1 * Math.pow(outT, 2);
+  const opacity = Math.min(easeIn, 1 - Math.pow(outT, 1.5));
+  // slow continuous drift — the "living camera"
+  const drift = Math.sin(frame / 90) * 6;
+  const rise = -frame * 0.04;
   return (
     <div
       style={{
@@ -38,12 +47,20 @@ export const SceneShell: React.FC<{
         background: C.bg,
         fontFamily: FONT,
         color: C.text,
-        opacity: Math.min(inO, outO),
+        opacity,
         overflow: "hidden",
       }}
     >
       <Backdrop />
-      <div style={{ position: "absolute", inset: 0, padding: "90px 120px" }}>
+      <div
+        style={{
+          position: "absolute",
+          inset: 0,
+          padding: "90px 120px",
+          transform: `scale(${scale}) translate(${drift}px, ${rise}px)`,
+          transformOrigin: "50% 45%",
+        }}
+      >
         {children}
       </div>
     </div>
