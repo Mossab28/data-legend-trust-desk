@@ -443,12 +443,11 @@ def is_real_value(v) -> bool:
 
 def render_legend() -> None:
     st.markdown(
-        f'<div style="display:flex;gap:16px;align-items:center;flex-wrap:wrap;'
+        f'<div style="display:flex;gap:14px;align-items:center;flex-wrap:nowrap;'
         f'margin-top:6px">'
-        f'{pill("CORROBORATED")}<span class="ftd-meta">2+ independent sources</span>'
-        f'{pill("CLAIMED_ONLY")}<span class="ftd-meta">stated only</span>'
-        f'{pill("UNKNOWN")}<span class="ftd-meta">not enough data — not a bad sign</span>'
-        f'</div>',
+        f'{pill("CORROBORATED")}{pill("CLAIMED_ONLY")}{pill("UNKNOWN")}'
+        f'<span class="ftd-meta">unknown = not enough data, not a bad '
+        f'sign</span></div>',
         unsafe_allow_html=True,
     )
 
@@ -798,13 +797,14 @@ def render_browse_tab(planner: str = "", scenario: str = "") -> None:
                                                    case=False, regex=False)]
 
     # --- refine toolbar ---------------------------------------------------
-    t0, t1, t2, t3 = st.columns([2.2, 1.2, 1.5, 2.4])
+    t0, t1, t2, t3 = st.columns([2.4, 1.3, 1.5, 2.1])
     with t0:
         name_filter = st.text_input(
             "Facility name contains", placeholder="Find a facility by name…",
             label_visibility="collapsed")
     with t1:
-        only_cor = st.toggle("Corroborated only", value=False)
+        only_cor = st.toggle("Corroborated", value=False,
+                             help="Show only independently corroborated facilities.")
     with t2:
         sort_by = st.selectbox(
             "Sort by", ["Trust ranking", "Trust score", "Record completeness"],
@@ -816,8 +816,7 @@ def render_browse_tab(planner: str = "", scenario: str = "") -> None:
             sparse_pct = int(round(100 * ((comp < 0.5) | comp.isna()).mean()))
             st.markdown(
                 f'<div class="ftd-meta" style="margin-top:6px">'
-                f'{sparse_pct}% data-sparse here — no evidence ≠ evidence of '
-                f'absence.</div>',
+                f'{sparse_pct}% data-sparse here</div>',
                 unsafe_allow_html=True,
             )
 
@@ -875,13 +874,13 @@ def render_browse_tab(planner: str = "", scenario: str = "") -> None:
                                         "capability_key", "action_type",
                                         "new_state", "note"])
 
-    page_size = 50
+    page_size = 15
     shown = df.head(page_size)
     for _, row in shown.iterrows():
         render_facility(row, capability_key, actions, planner, scenario)
     if len(df) > page_size:
-        st.caption(f"Showing the top {page_size} of {len(df)} facilities — "
-                   "narrow the region or city filter to see the rest.")
+        st.caption(f"Top {page_size} of {len(df)} — search a name, tap the "
+                   "map, or narrow the filters.")
 
 
 DESERT_LABELS = {
@@ -1388,8 +1387,8 @@ def main() -> None:
     st.markdown(
         f'<p class="ftd-title">Facility Trust Desk <span style="color:#8B949E;'
         f'font-weight:400">— India</span></p>'
-        f'<p class="ftd-sub">Every capability here is a claim, not a verified '
-        f'fact — this desk shows the evidence behind each one.</p>'
+        f'<p class="ftd-sub">Claims, not facts — every verdict shows its '
+        f'evidence.</p>'
         f'<div class="ftd-band">'
         f'<span class="item"><b>{stats["facilities"]:,}</b> facilities</span>'
         f'<span class="item"><b>{stats["assessments"]:,}</b> capability claims '
