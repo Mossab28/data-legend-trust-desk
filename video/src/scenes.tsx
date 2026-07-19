@@ -234,16 +234,58 @@ export const S5Validator: React.FC<{ durationInFrames: number }> = ({
 };
 
 // ------------------------------------------------------------ S6 · Deserts
+// Stylized India silhouette (clockwise, 700×660 space).
+const INDIA_PATH =
+  "M258,18 L292,48 L330,66 L372,84 L402,80 L432,92 L475,108 L530,128 " +
+  "L560,150 L538,168 L500,170 L472,192 L452,178 L432,196 L452,225 L438,258 " +
+  "L415,300 L385,355 L352,415 L322,470 L300,520 L286,562 L272,600 L258,588 " +
+  "L246,540 L236,488 L224,432 L212,372 L200,318 L186,262 L166,238 L128,232 " +
+  "L96,214 L64,196 L84,164 L118,152 L158,150 L150,120 L172,92 L205,62 " +
+  "L232,38 Z";
+
+// Dots sit ON the landmass now (same 700×660 coordinate space).
 const DOTS: Array<[number, number, string, boolean]> = [
-  [180, 90, C.green, true], [260, 60, C.green, true], [340, 120, C.amber, true],
-  [420, 70, C.green, true], [520, 140, C.amber, true], [610, 90, C.green, true],
-  [720, 170, C.green, true], [200, 210, C.amber, true], [320, 250, C.red, true],
-  [450, 230, C.red, true], [560, 270, C.gray, false], [660, 240, C.gray, false],
-  [760, 290, C.red, true], [240, 340, C.gray, false], [380, 370, C.red, true],
-  [500, 390, C.gray, false], [620, 360, C.amber, true], [730, 400, C.green, true],
-  [300, 460, C.gray, false], [440, 480, C.red, true], [580, 470, C.green, true],
-  [700, 500, C.gray, false], [360, 560, C.amber, true], [520, 580, C.green, true],
+  [240, 110, C.green, true], [300, 95, C.green, true], [360, 115, C.amber, true],
+  [420, 130, C.green, true], [490, 140, C.amber, true], [520, 155, C.gray, false],
+  [200, 175, C.amber, true], [260, 165, C.green, true], [330, 175, C.red, true],
+  [395, 185, C.red, true], [150, 205, C.gray, false], [230, 235, C.amber, true],
+  [300, 245, C.gray, false], [370, 260, C.red, true], [415, 290, C.gray, false],
+  [250, 300, C.green, true], [320, 330, C.red, true], [380, 350, C.gray, false],
+  [270, 380, C.amber, true], [330, 410, C.green, true], [300, 455, C.gray, false],
+  [280, 500, C.red, true], [300, 540, C.green, true], [285, 575, C.amber, true],
 ];
+
+const IndiaMap: React.FC = () => {
+  const frame = useCurrentFrame();
+  const draw = interpolate(frame, [0, 45], [2600, 0], {
+    extrapolateLeft: "clamp",
+    extrapolateRight: "clamp",
+  });
+  const fill = interpolate(frame, [30, 60], [0, 1], {
+    extrapolateLeft: "clamp",
+    extrapolateRight: "clamp",
+  });
+  return (
+    <svg
+      width={700}
+      height={640}
+      viewBox="0 0 700 660"
+      style={{ position: "absolute", left: 0, top: 0 }}
+    >
+      <path
+        d={INDIA_PATH}
+        fill={C.surface}
+        fillOpacity={fill * 0.9}
+        stroke={C.accent}
+        strokeOpacity={0.55}
+        strokeWidth={3}
+        strokeDasharray={2600}
+        strokeDashoffset={draw}
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+};
 
 export const S6Deserts: React.FC<{ durationInFrames: number }> = ({
   durationInFrames,
@@ -251,10 +293,11 @@ export const S6Deserts: React.FC<{ durationInFrames: number }> = ({
   <SceneShell durationInFrames={durationInFrames}>
     <Kicker>755 districts · joined to the official NFHS-5 survey</Kicker>
     <Title size={68}>A data desert is not a medical desert.</Title>
-    <div style={{ display: "flex", marginTop: 40, gap: 60 }}>
-      <div style={{ position: "relative", width: 860, height: 640 }}>
+    <div style={{ display: "flex", marginTop: 30, gap: 60 }}>
+      <div style={{ position: "relative", width: 700, height: 620 }}>
+        <IndiaMap />
         {DOTS.map(([x, y, color, solid], i) => {
-          const d = 8 + i * 2;
+          const d = 40 + i * 2;
           return (
             <Dot key={i} x={x} y={y} color={color} solid={solid} delay={d} />
           );
