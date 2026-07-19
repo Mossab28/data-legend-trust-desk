@@ -21,4 +21,7 @@ fac AS (
 SELECT f.unique_id, p.sd.s AS state_clean, p.sd.d AS district
 FROM fac f
 JOIN pins p ON try_cast(f.pin6 AS BIGINT) = try_cast(p.pincode AS BIGINT)
-WHERE f.pin6 <> '';
+WHERE f.pin6 <> ''
+-- The source facilities table has a few duplicate unique_ids; keep exactly ONE
+-- row per facility so the app's LEFT JOIN can't fan out into duplicate cards.
+QUALIFY row_number() OVER (PARTITION BY f.unique_id ORDER BY p.sd.s, p.sd.d) = 1;
