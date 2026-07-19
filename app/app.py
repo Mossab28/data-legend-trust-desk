@@ -1298,6 +1298,9 @@ def render_decisions_tab() -> None:
         if "scenario" not in shortlist.columns:
             shortlist["scenario"] = None
         shortlist["scenario"] = shortlist["scenario"].fillna("Unnamed scenario")
+        # A facility shortlisted twice in the same scenario shows once.
+        shortlist = shortlist.drop_duplicates(
+            subset=["scenario", "unique_id", "capability_key"], keep="first")
         for scen, group in shortlist.groupby("scenario", sort=True):
             st.markdown(f'<div class="ftd-card"><div class="ftd-name">{scen}'
                         f'</div><div class="ftd-meta">{len(group)} facilities'
