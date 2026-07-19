@@ -1,5 +1,5 @@
 import React from "react";
-import { Composition, Series } from "remotion";
+import { Audio, Composition, Series, staticFile } from "remotion";
 import {
   S1Hook,
   S2Problem,
@@ -12,48 +12,54 @@ import {
 } from "./scenes";
 
 const FPS = 30;
+const OVERLAP = 16; // frames of zoom-through crossfade between scenes
 
 // Scene durations in frames (30 fps).
 const T = {
-  s1: 150, // 5.0s hook
-  s2: 200, // 6.7s data problem
-  s3: 240, // 8.0s verdicts
-  s4: 210, // 7.0s receipts
-  s5: 230, // 7.7s validator
-  s6: 230, // 7.7s deserts
-  s7: 230, // 7.7s override
-  s8: 210, // 7.0s close
+  s1: 150,
+  s2: 200,
+  s3: 240,
+  s4: 210,
+  s5: 230,
+  s6: 230,
+  s7: 230,
+  s8: 210,
 };
 
-const TOTAL = Object.values(T).reduce((a, b) => a + b, 0);
+const TOTAL =
+  Object.values(T).reduce((a, b) => a + b, 0) -
+  OVERLAP * (Object.keys(T).length - 1);
 
 const Video: React.FC = () => (
-  <Series>
-    <Series.Sequence durationInFrames={T.s1}>
-      <S1Hook durationInFrames={T.s1} />
-    </Series.Sequence>
-    <Series.Sequence durationInFrames={T.s2}>
-      <S2Problem durationInFrames={T.s2} />
-    </Series.Sequence>
-    <Series.Sequence durationInFrames={T.s3}>
-      <S3Verdicts durationInFrames={T.s3} />
-    </Series.Sequence>
-    <Series.Sequence durationInFrames={T.s4}>
-      <S4Receipts durationInFrames={T.s4} />
-    </Series.Sequence>
-    <Series.Sequence durationInFrames={T.s5}>
-      <S5Validator durationInFrames={T.s5} />
-    </Series.Sequence>
-    <Series.Sequence durationInFrames={T.s6}>
-      <S6Deserts durationInFrames={T.s6} />
-    </Series.Sequence>
-    <Series.Sequence durationInFrames={T.s7}>
-      <S7Override durationInFrames={T.s7} />
-    </Series.Sequence>
-    <Series.Sequence durationInFrames={T.s8}>
-      <S8Close durationInFrames={T.s8} />
-    </Series.Sequence>
-  </Series>
+  <>
+    <Audio src={staticFile("ambient.wav")} volume={0.55} />
+    <Series>
+      <Series.Sequence durationInFrames={T.s1}>
+        <S1Hook durationInFrames={T.s1} />
+      </Series.Sequence>
+      <Series.Sequence durationInFrames={T.s2} offset={-OVERLAP}>
+        <S2Problem durationInFrames={T.s2} />
+      </Series.Sequence>
+      <Series.Sequence durationInFrames={T.s3} offset={-OVERLAP}>
+        <S3Verdicts durationInFrames={T.s3} />
+      </Series.Sequence>
+      <Series.Sequence durationInFrames={T.s4} offset={-OVERLAP}>
+        <S4Receipts durationInFrames={T.s4} />
+      </Series.Sequence>
+      <Series.Sequence durationInFrames={T.s5} offset={-OVERLAP}>
+        <S5Validator durationInFrames={T.s5} />
+      </Series.Sequence>
+      <Series.Sequence durationInFrames={T.s6} offset={-OVERLAP}>
+        <S6Deserts durationInFrames={T.s6} />
+      </Series.Sequence>
+      <Series.Sequence durationInFrames={T.s7} offset={-OVERLAP}>
+        <S7Override durationInFrames={T.s7} />
+      </Series.Sequence>
+      <Series.Sequence durationInFrames={T.s8} offset={-OVERLAP}>
+        <S8Close durationInFrames={T.s8} />
+      </Series.Sequence>
+    </Series>
+  </>
 );
 
 export const RemotionRoot: React.FC = () => (
