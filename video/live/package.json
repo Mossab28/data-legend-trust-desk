@@ -1,0 +1,2 @@
+{ "name": "ftd-live-recorder", "private": true, "type": "module",
+  "dependencies": { "playwright": "1.50.1" } }
