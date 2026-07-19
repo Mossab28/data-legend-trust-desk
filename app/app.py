@@ -443,22 +443,24 @@ def is_real_value(v) -> bool:
 
 def render_legend() -> None:
     st.markdown(
-        f'<div style="display:flex;gap:18px;align-items:center;flex-wrap:wrap;'
+        f'<div style="display:flex;gap:16px;align-items:center;flex-wrap:wrap;'
         f'margin-top:6px">'
-        f'{pill("CORROBORATED")}<span class="ftd-meta">backed by 2+ independent sources</span>'
-        f'{pill("CLAIMED_ONLY")}<span class="ftd-meta">stated, not independently confirmed</span>'
-        f'{pill("UNKNOWN")}<span class="ftd-meta">not enough data to judge — not a bad sign</span>'
+        f'{pill("CORROBORATED")}<span class="ftd-meta">2+ independent sources</span>'
+        f'{pill("CLAIMED_ONLY")}<span class="ftd-meta">stated only</span>'
+        f'{pill("UNKNOWN")}<span class="ftd-meta">not enough data — not a bad sign</span>'
         f'</div>',
         unsafe_allow_html=True,
     )
 
 
-def render_map(df: pd.DataFrame) -> None:
-    """Optional map of filtered facilities, colored by trust state.
+def render_map(df: pd.DataFrame) -> str:
+    """Map of filtered facilities, colored by trust state. Returns the name
+    of the facility the user tapped on the map ('' if none / unsupported).
 
     Silently skipped whenever geo columns are missing or dirty — the app must
     never crash on bad coordinates.
     """
+    picked = ""
     try:
         import pydeck as pdk
 
@@ -488,24 +490,34 @@ def render_map(df: pd.DataFrame) -> None:
             longitude=float(geo["longitude"].mean()),
             zoom=6,
         )
-        st.pydeck_chart(
-            pdk.Deck(
-                layers=[layer],
-                initial_view_state=view,
-                tooltip={"text": "{name}\n{city} — {trust_state}"},
-                map_style=None,
-            )
+        deck = pdk.Deck(
+            layers=[layer],
+            initial_view_state=view,
+            tooltip={"text": "{name}\n{city} — {trust_state}"},
+            map_style=None,
         )
+        try:
+            evt = st.pydeck_chart(deck, on_select="rerun",
+                                  selection_mode="single-object",
+                                  key="facility_map")
+            sel = getattr(getattr(evt, "selection", None), "objects", None) or {}
+            for objs in sel.values():
+                if objs:
+                    picked = str(objs[0].get("name") or "")
+                    break
+        except TypeError:
+            st.pydeck_chart(deck)  # older Streamlit: no selection support
         c1, c2 = st.columns([1, 5])
         with c1:
             st.button("Recenter map", key="recenter_facilities",
                       help="Reset the map to its initial view.")
         with c2:
-            st.caption("Map shows only facilities with usable coordinates — "
-                       "absence from the map does not mean absence on the ground.")
+            st.caption("Tap a dot to jump to that facility. Absence from the "
+                       "map does not mean absence on the ground.")
     except Exception:
         # Map is a bonus; never let it break the page.
         pass
+    return picked
 
 
 # ---------------------------------------------------------------------------
@@ -641,8 +653,8 @@ def render_facility(row: pd.Series, capability_key: str,
                     f'<div class="ftd-meta" style="margin-top:6px">'
                     f'Recorded sources: {" · ".join(domains[:5])}'
                     f'{" · …" if len(domains) > 5 else ""}'
-                    f' — <i>source links are claims too; many are stale or dead,'
-                    f' and that staleness is part of the trust signal</i></div>',
+                    f' — <i>many are stale; that staleness feeds the trust '
+                    f'signal</i></div>',
                     unsafe_allow_html=True,
                 )
 
@@ -724,9 +736,7 @@ def render_semantic_results(query: str) -> None:
         return
     st.markdown(
         f'<div class="ftd-meta" style="margin:8px 0">Top matches for '
-        f'“{query}” — semantic search over all 10k facility profiles, beyond '
-        f'the 8 fixed capabilities. Trust chips show how many of the '
-        f'facility\'s claims are independently corroborated.</div>',
+        f'“{query}” across all 10k profiles.</div>',
         unsafe_allow_html=True)
     for _, r in df.iterrows():
         sim = float(r["similarity"])
@@ -745,8 +755,7 @@ def render_semantic_results(query: str) -> None:
             f'<div class="ftd-meta" style="margin-top:8px">“{snippet}…”</div>'
             f'</div>',
             unsafe_allow_html=True)
-    st.caption("Semantic matches are leads, not verdicts — open the facility "
-               "in the capability view to inspect its evidence.")
+    st.caption("Matches are leads, not verdicts.")
 
 
 def render_browse_tab(planner: str = "", scenario: str = "") -> None:
@@ -789,7 +798,11 @@ def render_browse_tab(planner: str = "", scenario: str = "") -> None:
                                                    case=False, regex=False)]
 
     # --- refine toolbar ---------------------------------------------------
-    t1, t2, t3 = st.columns([1.2, 1.6, 3.2])
+    t0, t1, t2, t3 = st.columns([2.2, 1.2, 1.5, 2.4])
+    with t0:
+        name_filter = st.text_input(
+            "Facility name contains", placeholder="Find a facility by name…",
+            label_visibility="collapsed")
     with t1:
         only_cor = st.toggle("Corroborated only", value=False)
     with t2:
@@ -803,11 +816,14 @@ def render_browse_tab(planner: str = "", scenario: str = "") -> None:
             sparse_pct = int(round(100 * ((comp < 0.5) | comp.isna()).mean()))
             st.markdown(
                 f'<div class="ftd-meta" style="margin-top:6px">'
-                f'{sparse_pct}% of records in this selection are data-sparse — '
-                f'absence of evidence is not evidence of absence.</div>',
+                f'{sparse_pct}% data-sparse here — no evidence ≠ evidence of '
+                f'absence.</div>',
                 unsafe_allow_html=True,
             )
 
+    if name_filter.strip():
+        df = df[df["name"].fillna("").str.contains(name_filter.strip(),
+                                                   case=False, regex=False)]
     if only_cor:
         df = df[df["trust_state"] == "CORROBORATED"]
     if sort_by == "Trust score":
@@ -842,7 +858,15 @@ def render_browse_tab(planner: str = "", scenario: str = "") -> None:
         )
         return
 
-    render_map(df)
+    picked = render_map(df)
+    if picked:
+        sub = df[df["name"] == picked]
+        if not sub.empty:
+            df = sub
+            st.markdown(f'<div class="ftd-meta">Map selection: '
+                        f'<b style="color:#C9D1D9">{picked}</b> — clear it by '
+                        f'clicking an empty area of the map.</div>',
+                        unsafe_allow_html=True)
 
     try:
         actions = load_actions(df["unique_id"].tolist())
@@ -1016,12 +1040,9 @@ def render_desert_map(df: pd.DataFrame) -> None:
 def render_deserts_tab() -> None:
     """District-level view: separating medical deserts from data deserts."""
     st.subheader("Medical deserts vs data deserts")
-    st.markdown(
-        "**A blank spot in our data is not a blank spot on the ground.** "
-        "This view joins our records with the India Post directory and the "
-        "official **NFHS-5 district health survey** to say, honestly, which "
-        "districts look underserved — and which we simply don't know about."
-    )
+    st.caption("Our records joined with the official NFHS-5 district health "
+               "survey — a blank spot in the data is not a blank spot on the "
+               "ground.")
     try:
         df = load_districts()
     except Exception:
@@ -1042,14 +1063,13 @@ def render_deserts_tab() -> None:
         ) + "</div>",
         unsafe_allow_html=True,
     )
-    for key in order:
-        head, _, tail = DESERT_LABELS[key].partition(" — ")
-        st.markdown(
-            f'<div class="ftd-meta" style="margin:2px 0">'
-            f'<span style="color:{DESERT_HEX[key]}">●</span> '
-            f'<b style="color:#C9D1D9">{head}</b> — {tail}</div>',
-            unsafe_allow_html=True,
-        )
+    st.markdown(
+        '<div class="ftd-meta" style="margin:4px 0 2px 0">' + " &nbsp;·&nbsp; ".join(
+            f'<span style="color:{DESERT_HEX[k]}">●</span> '
+            f'<b style="color:#C9D1D9">{DESERT_LABELS[k].split(" — ")[0]}</b>'
+            for k in order) + "</div>",
+        unsafe_allow_html=True,
+    )
 
     render_desert_map(df)
 
@@ -1112,11 +1132,8 @@ def render_quality_tab() -> None:
     not a technical forensics lab.
     """
     st.subheader("Before you trust the data — what we flagged ourselves")
-    st.markdown(
-        "This app audits its **own** work. Below: records where something "
-        "doesn't add up, and cases where our independent validator "
-        "**overturned our own rating**."
-    )
+    st.caption("Records where something doesn't add up — including cases where "
+               "our own validator overturned our own rating.")
 
     try:
         vals = load_validations()
@@ -1371,9 +1388,8 @@ def main() -> None:
     st.markdown(
         f'<p class="ftd-title">Facility Trust Desk <span style="color:#8B949E;'
         f'font-weight:400">— India</span></p>'
-        f'<p class="ftd-sub">Every capability in this data is a claim, not a '
-        f'verified fact. This desk shows how much evidence backs each claim — '
-        f'so you can decide, and defend, where help goes.</p>'
+        f'<p class="ftd-sub">Every capability here is a claim, not a verified '
+        f'fact — this desk shows the evidence behind each one.</p>'
         f'<div class="ftd-band">'
         f'<span class="item"><b>{stats["facilities"]:,}</b> facilities</span>'
         f'<span class="item"><b>{stats["assessments"]:,}</b> capability claims '
