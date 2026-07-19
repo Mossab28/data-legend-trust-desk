@@ -626,8 +626,25 @@ def render_facility(row: pd.Series, capability_key: str,
             st.error(f"**{label}.** {fl['detail']}\n\n{explain}")
 
         # --- sources ----------------------------------------------------------
+        # Raw URLs from the source data are claims too — many are stale or
+        # dead (that staleness feeds the "No sign of life" flag). Show domains
+        # as plain text, never as clickable links.
         if is_real_value(row["source_urls"]):
-            st.caption(f"Sources: {row['source_urls']}")
+            import re as _re
+            domains = sorted({
+                d.lower().removeprefix("www.")
+                for d in _re.findall(r"https?://([^/\s,\"\]]+)",
+                                     str(row["source_urls"]))
+            })
+            if domains:
+                st.markdown(
+                    f'<div class="ftd-meta" style="margin-top:6px">'
+                    f'Recorded sources: {" · ".join(domains[:5])}'
+                    f'{" · …" if len(domains) > 5 else ""}'
+                    f' — <i>source links are claims too; many are stale or dead,'
+                    f' and that staleness is part of the trust signal</i></div>',
+                    unsafe_allow_html=True,
+                )
 
         st.divider()
 
