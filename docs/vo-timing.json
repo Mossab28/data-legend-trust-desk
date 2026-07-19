@@ -1,0 +1,50 @@
+[
+  {
+    "t": 0,
+    "text": "Facility Trust Desk — built for non-technical NGO planners, on Databricks Free Edition."
+  },
+  {
+    "t": 4.8,
+    "text": "Every capability in this data is a claim, not a fact. The planner picks a care need and a region."
+  },
+  {
+    "t": 15.04,
+    "text": "Ranked by evidence: corroborated, claimed only, or honestly unknown."
+  },
+  {
+    "t": 19.48,
+    "text": "Search any facility by name."
+  },
+  {
+    "t": 21.89,
+    "text": "Row-level citations: the exact sentences behind every rating."
+  },
+  {
+    "t": 28.14,
+    "text": "The app double-checks its own work — our validator overturned 378 of our own ratings."
+  },
+  {
+    "t": 33.55,
+    "text": "No ground truth exists, so humans stay in charge: signed overrides, remembered for the team."
+  },
+  {
+    "t": 42.01,
+    "text": "755 districts, joined with the official NFHS-5 health survey."
+  },
+  {
+    "t": 45.94,
+    "text": "Solid red: proven unmet need. Hollow gray: unknown. A data desert is not a medical desert."
+  },
+  {
+    "t": 51.5,
+    "text": "One click: an evidence-cited Decision Brief — a decision the team can defend."
+  },
+  {
+    "t": 55.63,
+    "text": "Databricks Apps · serverless SQL · Genie · MLflow — live on Free Edition."
+  },
+  {
+    "t": 59.44,
+    "text": "(end)"
+  }
+]
