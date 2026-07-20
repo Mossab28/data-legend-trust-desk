@@ -1,6 +1,5 @@
 import React from "react";
 import { Composition, Series } from "remotion";
-import { LiveDemo } from "./LiveDemo";
 import {
   S1Hook,
   S2Problem,
@@ -63,22 +62,12 @@ const Video: React.FC = () => (
 );
 
 export const RemotionRoot: React.FC = () => (
-  <>
-    <Composition
-      id="FTDDemo"
-      component={Video}
-      durationInFrames={TOTAL}
-      fps={FPS}
-      width={1920}
-      height={1080}
-    />
-    <Composition
-      id="LiveDemo"
-      component={LiveDemo}
-      durationInFrames={60 * FPS}
-      fps={FPS}
-      width={1920}
-      height={1080}
-    />
-  </>
+  <Composition
+    id="FTDDemo"
+    component={Video}
+    durationInFrames={TOTAL}
+    fps={FPS}
+    width={1920}
+    height={1080}
+  />
 );

@@ -12,14 +12,16 @@ const PROFILE = new URL("./profile", import.meta.url).pathname;
 const REC = new URL("./recordings", import.meta.url).pathname;
 fs.mkdirSync(REC, { recursive: true });
 
-const ctx = await chromium.launchPersistentContext(PROFILE, {
-  headless: true,
+const browser = await chromium.launch({
   executablePath:
     "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+});
+const ctx = await browser.newContext({
+  storageState: new URL("./state.json", import.meta.url).pathname,
   viewport: { width: 1920, height: 1080 },
   recordVideo: { dir: REC, size: { width: 1920, height: 1080 } },
 });
-const page = ctx.pages()[0] ?? (await ctx.newPage());
+const page = await ctx.newPage();
 const wait = (ms) => page.waitForTimeout(ms);
 
 async function idle(extra = 500) {
@@ -35,7 +37,7 @@ const capLog = [];
 let capT0 = 0;
 const caption = (t) => {
   if (capT0) capLog.push({ t: +(((Date.now() - capT0) / 1000).toFixed(2)), text: t });
-  // écran propre — sous-titres ajoutés en post via Remotion (timing maîtrisé)
+  return _setCaption(t);
 };
 const _setCaption = (t) => page.evaluate((t) => {
   let el = document.getElementById("__cap");
@@ -77,104 +79,87 @@ await idle(1200);
 const main = page.locator('section[data-testid="stMain"], section.main').first();
 capT0 = Date.now();
 
-// ============ SECTION 1 · HOOK ============
-await caption("In India, a hospital's ICU is often a claim — not a real capability.");
-await wait(4200);
+await caption("Facility Trust Desk — built for non-technical NGO planners, on Databricks Free Edition.");
+await wait(4800);
 
-// ============ SECTION 2 · PICK A NEED ============
-await caption("A planner picks a type of care and a region.");
+// S1 · pick Surgery + Rajasthan
+await caption("Every capability in this data is a claim, not a fact. The planner picks a care need and a region.");
 const capability = main.getByTestId("stSelectbox").first();
-await smoothScroll(Math.max(0, await yOf(capability) - 200), 900);
-await wait(300);
+await smoothScroll(Math.max(0, await yOf(capability) - 200), 1000);
 await capability.click();
-await page.keyboard.type("Surgery", { delay: 45 });
-await wait(250);
+await page.keyboard.type("Surgery", { delay: 60 });
+await wait(300);
 await page.keyboard.press("Enter");
 await idle();
 const state = main.getByTestId("stSelectbox").nth(1);
 await state.click();
-await page.keyboard.type("Rajasthan", { delay: 45 });
-await wait(250);
+await page.keyboard.type("Rajasthan", { delay: 60 });
+await wait(300);
 await page.keyboard.press("Enter");
 await idle(600);
-await caption("Every facility is ranked by the evidence behind its claims.");
+await caption("Ranked by evidence: corroborated, claimed only, or honestly unknown.");
 const tiles = main.locator(".ftd-stats").first();
-await smoothScroll(Math.max(0, await yOf(tiles).catch(() => 400) - 160), 1000);
-await wait(2600);
-await caption("Green: corroborated. Amber: only claimed. Gray: unknown.");
-await wait(2800);
+await smoothScroll(Math.max(0, await yOf(tiles).catch(() => 400) - 160), 1200);
+await wait(3200);
 
-// ============ SECTION 3 · THE EVIDENCE ============
-await caption("Open any facility to read the exact sentences behind its rating.");
+// S2 · find the star facility
+await caption("Search any facility by name.");
 const nameBox = page.getByPlaceholder("Find a facility by name…");
-await smoothScroll(Math.max(0, await yOf(nameBox) - 220), 800);
+await smoothScroll(Math.max(0, await yOf(nameBox) - 220), 900);
 await nameBox.click();
-await nameBox.pressSequentially("Agarwal", { delay: 45 });
+await nameBox.pressSequentially("Agarwal", { delay: 65 });
 await nameBox.press("Enter");
-await idle(700);
+await idle(800);
+
+// S3 · open evidence
+await caption("Row-level citations: the exact sentences behind every rating.");
 const expander = page.getByText("Evidence, gaps & review").first();
-await smoothScroll(Math.max(0, await yOf(expander) - 260), 900);
+await smoothScroll(Math.max(0, await yOf(expander) - 260), 1100);
 await wait(400);
 await expander.click();
 await idle(600);
-await smoothScroll(await page.evaluate(() => scrollY + 240), 900);
-await wait(3000);
+await smoothScroll(await page.evaluate(() => scrollY + 240), 1100);
+await wait(2200);
+await caption("The app double-checks its own work — our validator overturned 378 of our own ratings.");
+await wait(5400);
 
-// ============ SECTION 4 · THE APP DOUBTS ITSELF ============
-await caption("The app even audits itself — and overturns its own ratings.");
-await wait(3600);
-await caption("Here, our own validator disagrees with a corroborated score.");
-await wait(3800);
-
-// ============ SECTION 5 · HUMAN IN THE LOOP (temps fort) ============
-await caption("So a human always has the final word.");
+// S4 · signed override (tradeoff: no ground truth -> humans in charge)
+await caption("No ground truth exists, so humans stay in charge: signed overrides, remembered for the team.");
 const note = page.getByPlaceholder(/I visited this facility/).first();
-await smoothScroll(Math.max(0, await yOf(note) - 300), 900);
-await wait(500);
+await smoothScroll(Math.max(0, await yOf(note) - 340), 1000);
 await note.click();
-await note.pressSequentially("Field check: surgery not confirmed on site.", { delay: 42 });
-await wait(600);
-await caption("The planner overrides the machine, in plain words.");
-await wait(2400);
+await note.pressSequentially("Field check: surgical capability not confirmed on site.", { delay: 22 });
 const saveBtn = page.getByRole("button", { name: "Save override" }).first();
 await saveBtn.click();
-await idle(1000);
-// remonter en haut pour montrer le compteur d'humilité passer à 1
-await smoothScroll(0, 1000);
-await wait(900);
-const counter = main.locator("text=/times a human corrected/").first();
-await counter.scrollIntoViewIfNeeded().catch(() => {});
-await wait(500);
-await caption("Every correction is signed, kept for the team — and counted, out loud.");
-await wait(4400);
+await idle(900);
 
-// ============ SECTION 6 · DATA DESERT ≠ MEDICAL DESERT ============
+// S5 · medical deserts — scroll TO the map, header is not the point
 await page.getByRole("tab", { name: "Medical deserts" }).click();
 await idle(800);
-await caption("Zoom out: 755 districts, joined with India's official health survey.");
-await wait(1000);
+await caption("755 districts, joined with the official NFHS-5 health survey.");
 const mapCanvas = page.locator("canvas").last();
-await mapCanvas.evaluate((el) =>
-  el.scrollIntoView({ behavior: "smooth", block: "center" })).catch(() => {});
-await wait(2200);
-await caption("Red is a real medical desert. Gray just means we don't know yet.");
-await wait(4200);
+await smoothScroll(Math.max(0, await yOf(mapCanvas).catch(() => 600) - 130), 1500);
+await wait(2400);
+await caption("Solid red: proven unmet need. Hollow gray: unknown. A data desert is not a medical desert.");
+await wait(4800);
 
-// ============ SECTION 7 · THE DECISION + CLOSE ============
+// S6 · decision brief
 await page.getByRole("tab", { name: "Shortlist & decisions" }).click();
 await idle(700);
-await caption("One click exports a brief the team can actually defend.");
+await caption("One click: an evidence-cited Decision Brief — a decision the team can defend.");
 const dl = page.getByRole("button", { name: /Download decision brief/ }).first();
-await smoothScroll(Math.max(0, await yOf(dl) - 320), 1100);
+await smoothScroll(Math.max(0, await yOf(dl) - 320), 1300);
 await wait(500);
 await dl.click().catch(() => {});
-await wait(2600);
-await caption("Facility Trust Desk — live on Databricks Free Edition.");
-await wait(3400);
+await wait(2200);
+
+await caption("Databricks Apps · serverless SQL · Genie · MLflow — live on Free Edition.");
+await wait(3800);
 
 capLog.push({ t: +(((Date.now() - capT0) / 1000).toFixed(2)), text: "(end)" });
 fs.writeFileSync(`${REC}/captions.json`, JSON.stringify(capLog, null, 2));
 const v = page.video();
 await ctx.close(); // finalise la vidéo
 fs.copyFileSync(await v.path(), `${REC}/demo-raw.webm`);
+await browser.close();
 console.log("→ recordings/demo-raw.webm prêt");
