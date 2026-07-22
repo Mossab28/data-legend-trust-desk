@@ -10,6 +10,7 @@ import {
   S7Override,
   S8Close,
 } from "./scenes";
+import { LiveDemo } from "./LiveDemo";
 
 const FPS = 30;
 const OVERLAP = 16; // frames of zoom-through crossfade between scenes
@@ -62,12 +63,22 @@ const Video: React.FC = () => (
 );
 
 export const RemotionRoot: React.FC = () => (
-  <Composition
-    id="FTDDemo"
-    component={Video}
-    durationInFrames={TOTAL}
-    fps={FPS}
-    width={1920}
-    height={1080}
-  />
+  <>
+    <Composition
+      id="FTDDemo"
+      component={Video}
+      durationInFrames={TOTAL}
+      fps={FPS}
+      width={1920}
+      height={1080}
+    />
+    <Composition
+      id="LiveDemo"
+      component={LiveDemo}
+      durationInFrames={60 * FPS}
+      fps={FPS}
+      width={1708}
+      height={1000}
+    />
+  </>
 );

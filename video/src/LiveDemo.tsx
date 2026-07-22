@@ -9,26 +9,25 @@ import {
 } from "remotion";
 
 const FPS = 30;
-const RAW_SECONDS = 75.8667; // trimmed screen.mp4 duration
+const RAW_SECONDS = 72.4167; // re-recorded screen.mp4 duration (chrome-cropped)
 const FINAL_SECONDS = 60;
 
-// Caption schedule (start, end in FINAL seconds). Even, comfortable pacing —
-// each line held long enough to read and to voice over.
+// Caption schedule (start, end in FINAL seconds), re-timed to the new
+// recording's actual on-screen moments (see video/public/screen.mp4).
 const CAPTIONS: Array<[number, number, string]> = [
-  [0.0, 3.32, "In India, an ICU is often a claim, not a capability."],
-  [3.32, 9.05, "A planner picks a type of care and a region."],
-  [9.05, 14.12, "Ranked by evidence — green proven, amber claimed, gray unknown."],
-  [14.12, 20.97, "Open any facility to read the exact sentences behind its rating."],
-  [20.97, 23.82, "The app audits — and overturns — its own ratings."],
-  [23.82, 26.83, "Our validator disagrees with a corroborated score."],
-  [26.83, 30.5, "So a human always has the final word."],
-  [30.5, 35.5, "The planner overrides the machine, in plain words."],
-  [35.5, 44.0, "Every correction is signed, kept — and counted, out loud."],
-  [44.0, 48.0, "755 districts, joined with the NFHS-5 survey."],
-  [48.0, 51.6, "Red is a real medical desert. Gray means we don't know yet."],
-  [51.6, 55.2, "One click exports a brief the team can defend."],
-  [55.2, 58.2, "Live on Databricks Free Edition."]
-,
+  [0.0, 6.5, "In India, an ICU is often a claim, not a capability."],
+  [6.5, 12.0, "A planner picks a type of care and a region."],
+  [12.0, 18.5, "Ranked by evidence — green proven, amber claimed, gray unknown."],
+  [18.5, 22.0, "Open any facility to read the exact sentences behind its rating."],
+  [22.0, 24.5, "The app audits — and overturns — its own ratings."],
+  [24.5, 27.5, "Our validator disagrees with a corroborated score."],
+  [27.5, 32.0, "So a human always has the final word."],
+  [32.0, 37.0, "The planner overrides the machine, in plain words."],
+  [37.0, 42.0, "Every correction is signed, kept — and counted, out loud."],
+  [42.0, 46.0, "755 districts, joined with the NFHS-5 survey."],
+  [46.0, 50.0, "Red is a real medical desert. Gray means we don't know yet."],
+  [50.0, 55.0, "One click exports a brief the team can defend."],
+  [55.0, 58.5, "Live on Databricks Free Edition."],
 ];
 
 const Caption: React.FC<{ text: string; durationInFrames: number }> = ({
@@ -93,6 +92,7 @@ export const LiveDemo: React.FC = () => {
           src={staticFile("screen.mp4")}
           playbackRate={playbackRate}
           muted
+          style={{ width: "100%", height: "100%", objectFit: "cover" }}
         />
       </AbsoluteFill>
       {CAPTIONS.map(([start, end, text], i) => (

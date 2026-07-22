@@ -125,8 +125,14 @@ html, body, [class*="css"], .stMarkdown, .stButton, .stSelectbox, .stTextInput {
 /* streamlit widget touch-ups */
 div[data-testid="stExpander"] details { border: 1px solid #21262D; border-radius: 0 0 8px 8px;
                                         background: #0D1117; }
-div[data-baseweb="tab-list"] { gap: 4px; }
-button[data-baseweb="tab"] { font-size: 14px !important; }
+div[data-baseweb="tab-list"] { gap: 10px; }
+button[data-baseweb="tab"] { font-size: 14px !important; padding: 8px 18px !important;
+    border: 1px solid #262D37 !important; border-radius: 8px !important;
+    background: #11161D !important; margin: 0 !important; }
+button[data-baseweb="tab"][aria-selected="true"] { background: #172033 !important;
+    border-color: #2F81F7 !important; }
+div[data-baseweb="tab-highlight"] { display: none; }
+div[data-baseweb="tab-border"] { display: none; }
 </style>
 """
 
@@ -906,14 +912,24 @@ def render_browse_tab(planner: str = "", scenario: str = "") -> None:
                     '<b style="color:#C9D1D9">Open a card</b> to read the '
                     'evidence, gaps and validator notes behind its rating.</div>',
                     unsafe_allow_html=True)
-    page_size = 15
-    shown = df.head(page_size)
+    page_size = 5
+    total_pages = max(1, -(-len(df) // page_size))
+    page = 1
+    if total_pages > 1:
+        page = st.slider(
+            "Page", 1, total_pages, 1,
+            key=f"ftd_page_{capability_key}_{state}",
+            help="Search a name, tap the map, or narrow the filters to "
+                 "shrink this list.",
+        )
+    start = (page - 1) * page_size
+    shown = df.iloc[start:start + page_size]
     for _, row in shown.iterrows():
         render_facility(row, capability_key, actions, planner, scenario,
                         expanded=focused)
     if len(df) > page_size:
-        st.caption(f"Top {page_size} of {len(df)} — search a name, tap the "
-                   "map, or narrow the filters.")
+        st.caption(f"Showing {start + 1}-{min(start + page_size, len(df))} "
+                   f"of {len(df)}.")
 
 
 DESERT_LABELS = {
